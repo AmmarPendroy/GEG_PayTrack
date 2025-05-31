@@ -1,6 +1,7 @@
 import streamlit as st
 import psycopg2
 import hashlib
+import pandas as pd
 
 # ---------------------------------------
 # Load Database URL from secrets
@@ -43,7 +44,80 @@ def authenticate_user(username, password):
     return None
 
 # ---------------------------------------
-# Login page
+# Contractor Form
+# ---------------------------------------
+def contractor_form():
+    st.subheader("➕ Add New Contractor")
+    name = st.text_input("Contractor Name")
+    person = st.text_input("Contact Person")
+    email = st.text_input("Contact Email")
+    phone = st.text_input("Contact Phone")
+    address = st.text_area("Address")
+
+    if st.button("Submit Contractor"):
+        if name:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO contractors (name, contact_person, contact_email, contact_phone, address)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (name, person, email, phone, address))
+            conn.commit()
+            cur.close()
+            conn.close()
+            st.success("Contractor added successfully.")
+        else:
+            st.error("Contractor name is required.")
+
+# ---------------------------------------
+# Contractor Table View
+# ---------------------------------------
+def contractor_list():
+    st.subheader("📋 Contractor List")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT name, contact_person, contact_email, contact_phone, address, created_at
+        FROM contractors
+        ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if rows:
+        df = pd.DataFrame(rows, columns=["Name", "Contact", "Email", "Phone", "Address", "Created"])
+        st.dataframe(df)
+    else:
+        st.info("No contractors found.")
+
+# ---------------------------------------
+# Dashboards per role
+# ---------------------------------------
+def show_superadmin():
+    st.header("👑 Superadmin Dashboard")
+    st.write("Full system access.")
+
+def show_hq_admin():
+    st.header("🏢 HQ Admin Dashboard")
+    contractor_form()
+    contractor_list()
+
+def show_hq_accountant():
+    st.header("💰 HQ Accountant Dashboard")
+    st.write("Review and log payments.")
+
+def show_site_pm():
+    st.header("📋 Site PM Dashboard")
+    contractor_form()
+    contractor_list()
+
+def show_site_accountant():
+    st.header("📊 Site Accountant Dashboard")
+    st.write("Track payment progress.")
+
+# ---------------------------------------
+# Login Page
 # ---------------------------------------
 def login_page():
     st.title("GEG PayTrack Login")
@@ -60,35 +134,11 @@ def login_page():
             st.error("Invalid username or password")
 
 # ---------------------------------------
-# Role-specific dashboards (scaffolded)
-# ---------------------------------------
-def show_superadmin():
-    st.header("👑 Superadmin Dashboard")
-    st.write("Full system control.")
-
-def show_hq_admin():
-    st.header("🏢 HQ Admin Dashboard")
-    st.write("Manage users, projects, and view all data.")
-
-def show_hq_accountant():
-    st.header("💰 HQ Accountant Dashboard")
-    st.write("Review and log payments.")
-
-def show_site_pm():
-    st.header("📋 Site PM Dashboard")
-    st.write("Manage contracts and payment requests.")
-
-def show_site_accountant():
-    st.header("📊 Site Accountant Dashboard")
-    st.write("Assist PM and track payments.")
-
-# ---------------------------------------
-# Main app logic
+# Main App Logic
 # ---------------------------------------
 def main():
     st.set_page_config(page_title="GEG PayTrack", page_icon="🏗️", layout="centered")
 
-    # Session state to track login
     if "user" not in st.session_state:
         st.session_state.user = None
 
@@ -101,7 +151,6 @@ def main():
             st.session_state.user = None
             st.experimental_rerun()
 
-        # Route by role
         if user["role"] == "Superadmin":
             show_superadmin()
         elif user["role"] == "HQ Admin":
