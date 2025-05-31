@@ -1,91 +1,119 @@
 import streamlit as st
 import psycopg2
 import hashlib
-import datetime
 
-# ---------- Config ----------
+# ---------------------------------------
+# Load Database URL from secrets
+# ---------------------------------------
 DB_URL = st.secrets["DATABASE_URL"]
 
-# ---------- Utility ----------
+# ---------------------------------------
+# Hash password with SHA-256
+# ---------------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def connect_db():
+# ---------------------------------------
+# Connect to PostgreSQL Neon DB
+# ---------------------------------------
+def get_db_connection():
     return psycopg2.connect(DB_URL)
 
-def login_user(username, password):
-    conn = connect_db()
+# ---------------------------------------
+# Authenticate user from Neon 'users' table
+# ---------------------------------------
+def authenticate_user(username, password):
+    conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, role, hashed_password FROM users WHERE username = %s", (username,))
-    result = cur.fetchone()
+    cur.execute("""
+        SELECT id, username, hashed_password, role
+        FROM users
+        WHERE username = %s
+    """, (username,))
+    user = cur.fetchone()
     cur.close()
     conn.close()
 
-    if result and result[3] == hash_password(password):
-        return {"id": result[0], "username": result[1], "role": result[2]}
+    if user and user[2] == hash_password(password):
+        return {
+            "id": user[0],
+            "username": user[1],
+            "role": user[3]
+        }
     return None
 
-# ---------- Session State ----------
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-# ---------- Login Page ----------
+# ---------------------------------------
+# Login page
+# ---------------------------------------
 def login_page():
     st.title("GEG PayTrack Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
+
     if st.button("Login"):
-        user = login_user(username, password)
+        user = authenticate_user(username, password)
         if user:
             st.session_state.user = user
             st.success(f"Welcome, {user['username']} ({user['role']})")
             st.experimental_rerun()
         else:
-            st.error("Invalid credentials")
+            st.error("Invalid username or password")
 
-# ---------- Role-Based Pages ----------
+# ---------------------------------------
+# Role-specific dashboards (scaffolded)
+# ---------------------------------------
 def show_superadmin():
-    st.header("👑 Superadmin Panel")
-    st.write("Manage roles, users, and full system configuration.")
+    st.header("👑 Superadmin Dashboard")
+    st.write("Full system control.")
 
 def show_hq_admin():
-    st.header("🏢 HQ Admin Panel")
-    st.write("Manage users, view all projects and payment requests.")
+    st.header("🏢 HQ Admin Dashboard")
+    st.write("Manage users, projects, and view all data.")
 
 def show_hq_accountant():
-    st.header("💰 HQ Accountant Panel")
-    st.write("Review payment requests and log payments.")
+    st.header("💰 HQ Accountant Dashboard")
+    st.write("Review and log payments.")
 
 def show_site_pm():
-    st.header("📋 Site PM Panel")
-    st.write("Manage site contracts and submit payment requests.")
+    st.header("📋 Site PM Dashboard")
+    st.write("Manage contracts and payment requests.")
 
 def show_site_accountant():
-    st.header("📊 Site Accountant Panel")
-    st.write("Track payments and assist PMs.")
+    st.header("📊 Site Accountant Dashboard")
+    st.write("Assist PM and track payments.")
 
-# ---------- Main ----------
+# ---------------------------------------
+# Main app logic
+# ---------------------------------------
 def main():
+    st.set_page_config(page_title="GEG PayTrack", page_icon="🏗️", layout="centered")
+
+    # Session state to track login
+    if "user" not in st.session_state:
+        st.session_state.user = None
+
     if st.session_state.user is None:
         login_page()
     else:
-        role = st.session_state.user["role"]
-        st.sidebar.write(f"Logged in as: `{st.session_state.user['username']}` ({role})")
+        user = st.session_state.user
+        st.sidebar.success(f"Logged in as: {user['username']} ({user['role']})")
         if st.sidebar.button("Logout"):
             st.session_state.user = None
             st.experimental_rerun()
 
-        if role == "Superadmin":
+        # Route by role
+        if user["role"] == "Superadmin":
             show_superadmin()
-        elif role == "HQ Admin":
+        elif user["role"] == "HQ Admin":
             show_hq_admin()
-        elif role == "HQ Accountant":
+        elif user["role"] == "HQ Accountant":
             show_hq_accountant()
-        elif role == "Site PM":
+        elif user["role"] == "Site PM":
             show_site_pm()
-        elif role == "Site Accountant":
+        elif user["role"] == "Site Accountant":
             show_site_accountant()
         else:
-            st.error("Unknown role!")
+            st.error("Unknown role. Please contact administrator.")
 
-main()
+if __name__ == "__main__":
+    main()
