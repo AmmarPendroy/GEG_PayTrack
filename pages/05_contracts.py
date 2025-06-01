@@ -3,12 +3,13 @@
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import Binary
 import uuid
 from datetime import date, datetime
 
 st.title("📄 Contracts")
 
-# === DATABASE CONNECTION ===
+# ===  DATABASE CONNECTION ===
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
@@ -22,25 +23,22 @@ def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
             # Full rights
             can_view = can_add = can_edit = can_delete = True
         elif role == "Site PM":
-            # Can view/add contracts for projects they manage; no delete, edit only if needed
+            # Can view/add contracts (but no delete)
             can_view = can_add = True
-        elif role == "Site Accountant":
-            # Only view contracts for projects they are assigned to
-            can_view = True
-        elif role == "HQ Accountant":
-            # Can view all contracts, but no add/edit/delete
+        elif role in ["Site Accountant", "HQ Accountant"]:
+            # Only view contracts
             can_view = True
 
     return can_view, can_add, can_edit, can_delete
 
-# === FETCH CURRENT USER ===
+# === LOAD CURRENT USER ===
 user = st.session_state.get("user")
 if not isinstance(user, dict):
     user = {}
 
-can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contracts")
+can_view, can_add, can_edit, can_delete = get_access_flags(user, "contracts")
 
-# === SHOW ANIMATED “ACCESS DENIED” IF not can_view ===
+# === ACCESS DENIED ANIMATION IF NO PERMISSION ===
 if not can_view:
     st.markdown(
         """
@@ -76,11 +74,11 @@ if not can_view:
     )
     st.stop()
 
-# === LOAD “PROJECT” & “CONTRACTOR” LISTS FOR FORMS ===
+# === HELPER FUNCTIONS TO LOAD DROPDOWNS ===
 @st.cache_data(ttl=120)
 def load_projects_for_user(user_id: str, role: str):
     """
-    Returns all projects if Super/HQ roles; 
+    Returns (id, name) of all projects if Super/HQ roles;
     otherwise only projects assigned to this user.
     """
     conn = get_connection()
@@ -88,14 +86,16 @@ def load_projects_for_user(user_id: str, role: str):
     if role in ["Superadmin", "HQ Admin", "HQ Accountant"]:
         cur.execute("SELECT id, name FROM projects ORDER BY name;")
     else:
-        # Site PM or Site Accountant: only show assigned projects
-        cur.execute("""
+        cur.execute(
+            """
             SELECT p.id, p.name
             FROM projects p
             JOIN project_assignments pa ON p.id = pa.project_id
             WHERE pa.user_id = %s
             ORDER BY p.name;
-        """, (user_id,))
+            """,
+            (user_id,)
+        )
     rows = cur.fetchall()
     conn.close()
     return rows
@@ -103,7 +103,7 @@ def load_projects_for_user(user_id: str, role: str):
 @st.cache_data(ttl=120)
 def load_contractors():
     """
-    Returns a list of all contractors (id, name).
+    Returns (id, name) of all contractors.
     """
     conn = get_connection()
     cur = conn.cursor()
@@ -112,51 +112,57 @@ def load_contractors():
     conn.close()
     return rows
 
-# Preload projects & contractors for the dropdowns
 projects_list = load_projects_for_user(user.get("id"), user.get("role"))
 contractors_list = load_contractors()
 
-# === “ADD NEW CONTRACT” FORM ===
+# === ADD NEW CONTRACT FORM ===
 if can_add:
     with st.expander("➕ Add New Contract", expanded=True):
         with st.form("add_contract_form"):
-            # Project dropdown
-            project_options = {p["name"]: p["id"] for p in projects_list}
-            selected_proj = st.selectbox("Project", list(project_options.keys()))
+            title = st.text_input("Contract Title", max_chars=100)
+            project_map = {p["name"]: p["id"] for p in projects_list}
+            contractor_map = {c["name"]: c["id"] for c in contractors_list}
 
-            # Contractor dropdown
-            contractor_options = {c["name"]: c["id"] for c in contractors_list}
-            selected_contractor = st.selectbox("Contractor", list(contractor_options.keys()))
+            selected_proj = st.selectbox("Project", list(project_map.keys()))
+            selected_contractor = st.selectbox("Contractor", list(contractor_map.keys()))
 
-            contract_value = st.number_input("Contract Value (e.g. 10000.00)", min_value=0.0, step=100.0, format="%.2f")
+            value_usd = st.number_input("Value in USD ($)", min_value=0.0, step=100.0, format="%.2f")
+            value_iqd = st.number_input("Value in IQD (ع.د)", min_value=0.0, step=100000.0, format="%.0f")
+
             start_date = st.date_input("Start Date", value=date.today())
             end_date = st.date_input("End Date", value=date.today())
             status = st.selectbox("Status", ["Pending", "Signed", "In Progress", "Completed", "On Hold"])
-            scope = st.text_area("Scope / Description", help="Describe the main scope of work.")
+            scope = st.text_area("Scope / Description")
 
             if st.form_submit_button("Add Contract"):
-                if not selected_proj or not selected_contractor:
-                    st.warning("Please select both a project and a contractor.")
+                if not title or not selected_proj or not selected_contractor:
+                    st.warning("Title, Project, and Contractor are required.")
                 else:
                     try:
                         conn = get_connection()
                         cur = conn.cursor()
-                        cur.execute("""
+                        cur.execute(
+                            """
                             INSERT INTO contracts (
-                                id, project_id, contractor_id, contract_value,
+                                id, title, project_id, contractor_id,
+                                contract_value_usd, contract_value_iqd,
                                 start_date, end_date, status, scope, created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-                        """, (
-                            str(uuid.uuid4()),
-                            project_options[selected_proj],
-                            contractor_options[selected_contractor],
-                            contract_value,
-                            start_date,
-                            end_date,
-                            status,
-                            scope,
-                            datetime.utcnow()
-                        ))
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                str(uuid.uuid4()),            # id
+                                title,                        # title
+                                project_map[selected_proj],   # project_id
+                                contractor_map[selected_contractor],  # contractor_id
+                                value_usd if value_usd else None,
+                                value_iqd if value_iqd else None,
+                                start_date,
+                                end_date,
+                                status,
+                                scope,
+                                datetime.utcnow()
+                            )
+                        )
                         conn.commit()
                         conn.close()
                         st.success("✅ Contract added successfully!")
@@ -164,101 +170,95 @@ if can_add:
                     except Exception as e:
                         st.error(f"Database error: {e}")
 
-# === “SEARCH CONTRACTS” & LIST ===
+# === CONTRACT LIST ===
 st.markdown("### 📋 Contract List")
 try:
     conn = get_connection()
     cur = conn.cursor()
 
-    # Determine which contracts to fetch:
     if user.get("role") in ["Superadmin", "HQ Admin", "HQ Accountant"]:
-        # All contracts (Superadmin, HQ Admin, HQ Accountant)
-        cur.execute("""
-            SELECT 
-                c.id, 
-                p.name AS project_name, 
-                t.name AS contractor_name, 
-                c.contract_value, 
-                c.start_date, 
-                c.end_date, 
-                c.status, 
-                c.scope, 
-                c.created_at
+        cur.execute(
+            """
+            SELECT c.*, p.name AS project_name, t.name AS contractor_name
             FROM contracts c
             JOIN projects p ON c.project_id = p.id
             JOIN contractors t ON c.contractor_id = t.id
             ORDER BY c.created_at DESC;
-        """)
+            """
+        )
     else:
-        # Site PM or Site Accountant: only contracts for their assigned projects
-        cur.execute("""
-            SELECT 
-                c.id, 
-                p.name AS project_name, 
-                t.name AS contractor_name, 
-                c.contract_value, 
-                c.start_date, 
-                c.end_date, 
-                c.status, 
-                c.scope, 
-                c.created_at
+        cur.execute(
+            """
+            SELECT c.*, p.name AS project_name, t.name AS contractor_name
             FROM contracts c
             JOIN projects p ON c.project_id = p.id
             JOIN contractors t ON c.contractor_id = t.id
             JOIN project_assignments pa ON p.id = pa.project_id
             WHERE pa.user_id = %s
             ORDER BY c.created_at DESC;
-        """, (user.get("id"),))
+            """,
+            (user.get("id"),)
+        )
+
     contracts = cur.fetchall()
     conn.close()
 
-    # === SEARCH BAR ===
-    search_term = st.text_input("🔍 Search by project or contractor name").strip().lower()
+    search_term = st.text_input("🔍 Search by title, project, or contractor").strip().lower()
 
-    # === FILTER LOGIC ===
-    filtered_list = [
+    filtered = [
         c for c in contracts
-        if search_term in (c["project_name"] or "").lower()
+        if search_term in (c["title"] or "").lower()
+        or search_term in (c["project_name"] or "").lower()
         or search_term in (c["contractor_name"] or "").lower()
     ]
 
-    if not filtered_list:
+    if not filtered:
         st.info("No matching contracts found.")
     else:
-        # Display each contract in an expander
-        for c in filtered_list:
-            header_label = f"{c['project_name']}  ➔  {c['contractor_name']}  ({c['status']})"
-            with st.expander(header_label):
-                col1, col2 = st.columns([3, 1])
+        for c in filtered:
+            label = f"{c['title']}  ({c['project_name']} ➔ {c['contractor_name']})"
+            with st.expander(label):
+                col1, col2 = st.columns([4, 1])
 
+                # --- Left Column: Show Contract Details & Edit Form ---
                 with col1:
                     st.markdown(f"**Scope / Description:**  {c['scope'] or '—'}")
-                    st.markdown(f"**Value:**  {c['contract_value']:,}")
+                    st.markdown(f"**Status:**  {c['status']}")
                     st.markdown(f"**Start Date:**  {c['start_date']}")
                     st.markdown(f"**End Date:**  {c['end_date']}")
+                    usd_display = f"${c['contract_value_usd']:,.2f}" if c["contract_value_usd"] else "—"
+                    iqd_display = f"{int(c['contract_value_iqd']):,} IQD" if c["contract_value_iqd"] else "—"
+                    st.markdown(f"**Value (USD):**  {usd_display}")
+                    st.markdown(f"**Value (IQD):**  {iqd_display}")
                     st.markdown(f"**Created At:**  {c['created_at']}")
 
-                    # Edit form if allowed
+                    # --- Edit Form (if allowed) ---
                     if can_edit:
+                        st.markdown("---")
                         with st.form(f"edit_contract_{c['id']}"):
+                            new_title = st.text_input("Contract Title", c["title"], key=f"title_{c['id']}")
                             new_status = st.selectbox(
                                 "Status",
                                 ["Pending", "Signed", "In Progress", "Completed", "On Hold"],
                                 index=["Pending", "Signed", "In Progress", "Completed", "On Hold"].index(c["status"]),
                                 key=f"status_{c['id']}"
                             )
-                            new_scope = st.text_area(
-                                "Scope / Description",
-                                c["scope"],
-                                key=f"scope_{c['id']}"
-                            )
-                            new_value = st.number_input(
-                                "Contract Value",
-                                value=float(c["contract_value"]),
+                            new_scope = st.text_area("Scope / Description", c["scope"] or "", key=f"scope_{c['id']}")
+                            new_value_usd = st.number_input(
+                                "Value in USD ($)",
+                                value=float(c["contract_value_usd"] or 0.0),
                                 min_value=0.0,
                                 step=100.0,
                                 format="%.2f",
-                                key=f"value_{c['id']}"
+                                key=f"usd_{c['id']}"
+                            )
+                            new_value_iqd = st.number_input(
+                                "Value in IQD (ع.د)",
+                                value=float(c["contract_value_iqd"] or 0.0),
+                                min_value=0.0,
+                                step=100000.0,
+                                format="%.0f",
+                                key=f"iqd_{c['id']}"
                             )
                             new_start = st.date_input("Start Date", value=c["start_date"], key=f"sd_{c['id']}")
                             new_end = st.date_input("End Date", value=c["end_date"], key=f"ed_{c['id']}")
@@ -267,40 +267,122 @@ try:
                                 try:
                                     conn2 = get_connection()
                                     cur2 = conn2.cursor()
-                                    cur2.execute("""
+                                    cur2.execute(
+                                        """
                                         UPDATE contracts
-                                        SET status=%s, scope=%s, contract_value=%s, start_date=%s, end_date=%s
-                                        WHERE id=%s;
-                                    """, (
-                                        new_status,
-                                        new_scope,
-                                        new_value,
-                                        new_start,
-                                        new_end,
-                                        c["id"]
-                                    ))
+                                        SET title = %s,
+                                            status = %s,
+                                            scope = %s,
+                                            contract_value_usd = %s,
+                                            contract_value_iqd = %s,
+                                            start_date = %s,
+                                            end_date = %s
+                                        WHERE id = %s;
+                                        """,
+                                        (
+                                            new_title,
+                                            new_status,
+                                            new_scope,
+                                            new_value_usd or None,
+                                            new_value_iqd or None,
+                                            new_start,
+                                            new_end,
+                                            c["id"]
+                                        )
+                                    )
                                     conn2.commit()
                                     conn2.close()
                                     st.success("✅ Contract updated successfully")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Update failed: {e}")
-                    else:
-                        # If read-only for this role, just display all fields
-                        pass
 
+                # --- Right Column: Delete Button & Attachments Section ---
                 with col2:
-                    # “Delete” button if allowed
-                    if can_delete and st.button("🗑️ Delete", key=f"del_{c['id']}"):
+                    # Delete Contract
+                    if can_delete and st.button("🗑️ Delete Contract", key=f"del_{c['id']}"):
                         try:
                             conn3 = get_connection()
                             cur3 = conn3.cursor()
                             cur3.execute("DELETE FROM contracts WHERE id = %s;", (c["id"],))
                             conn3.commit()
                             conn3.close()
-                            st.success("✅ Contract deleted")
+                            st.success("✅ Contract deleted successfully")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Deletion failed: {e}")
+
+                    # --- UPLOAD ATTACHMENT (if allowed) ---
+                    if can_add or can_edit:
+                        st.markdown("---")
+                        st.write("#### 📎 Attachments")
+                        uploaded_file = st.file_uploader(
+                            "Upload a file (PDF, DOCX, image, etc.)",
+                            type=None,
+                            key=f"upload_{c['id']}"
+                        )
+                        if uploaded_file is not None:
+                            file_bytes = uploaded_file.read()
+                            file_name = uploaded_file.name
+                            file_type = uploaded_file.type
+
+                            try:
+                                conn4 = get_connection()
+                                cur4 = conn4.cursor()
+                                cur4.execute(
+                                    """
+                                    INSERT INTO contract_attachments (
+                                        id, contract_id, file_name, file_type, file_data, uploaded_at
+                                    ) VALUES (%s, %s, %s, %s, %s, %s);
+                                    """,
+                                    (
+                                        str(uuid.uuid4()),
+                                        c["id"],
+                                        file_name,
+                                        file_type,
+                                        Binary(file_bytes),
+                                        datetime.utcnow()
+                                    )
+                                )
+                                conn4.commit()
+                                conn4.close()
+                                st.success("📎 Attachment uploaded successfully")
+                                st.experimental_rerun()
+                            except Exception as e:
+                                st.error(f"Failed to upload attachment: {e}")
+
+                        # --- LIST EXISTING ATTACHMENTS ---
+                        try:
+                            conn5 = get_connection()
+                            cur5 = conn5.cursor()
+                            cur5.execute(
+                                """
+                                SELECT id, file_name, file_type, file_data
+                                FROM contract_attachments
+                                WHERE contract_id = %s
+                                ORDER BY uploaded_at DESC;
+                                """,
+                                (c["id"],)
+                            )
+                            attachments = cur5.fetchall()
+                            conn5.close()
+
+                            for att in attachments:
+                                att_name = att["file_name"]
+                                att_data = att["file_data"]
+                                att_type = att["file_type"] or "application/octet-stream"
+
+                                # Download button for each attachment
+                                st.download_button(
+                                    label=f"⬇️ {att_name}",
+                                    data=att_data,
+                                    file_name=att_name,
+                                    mime=att_type,
+                                    key=f"download_{att['id']}"
+                                )
+
+                        except Exception as e:
+                            st.error(f"Failed to load attachments: {e}")
+
 except Exception as e:
     st.error(f"Failed to load contracts: {e}")
