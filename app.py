@@ -44,7 +44,8 @@ def sidebar_navigation(user):
     st.sidebar.markdown("---")
     if st.sidebar.button("🔓 Logout"):
         logout()
-        st.experimental_rerun()
+        st.rerun()
+
 
 # === Initialize Session State ===
 if "user" not in st.session_state:
@@ -62,7 +63,7 @@ if not user:
             "username": "dev_admin",
             "role": "Superadmin"
         }
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.switch_page("pages/01_login.py")
 else:
