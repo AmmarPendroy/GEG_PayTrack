@@ -1,36 +1,54 @@
 import streamlit as st
-import os, sys
+import hashlib
+import uuid
+from datetime import datetime
 
-# Ensure the root path is available for imports
-sys.path.append(os.path.abspath("."))
+# --- Streamlit Page Config ---
+st.set_page_config(page_title="🏗️ GEG PayTrack", layout="wide", page_icon="🏗️")
 
-from utils.core import get_current_user, logout
-from components.layout_components import sidebar_navigation
+# === 🔐 Auth Functions (was in core.py) ===
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="🏗️ GEG PayTrack",
-    layout="wide",
-    page_icon="🏗️",
-)
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# --- Initialize Session State ---
+def verify_password(input_password: str, stored_hash: str) -> bool:
+    return hash_password(input_password) == stored_hash
+
+def get_current_user():
+    return st.session_state.get("user", None)
+
+def logout():
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
+def generate_uuid() -> str:
+    return str(uuid.uuid4())
+
+def get_timestamp() -> str:
+    return datetime.utcnow().isoformat()
+
+# === 🧠 Temporary Sidebar Navigation (Replace later with layout_components.py) ===
+def sidebar_navigation(user):
+    st.sidebar.title("🏗️ GEG PayTrack")
+    st.sidebar.write(f"👤 **{user.get('username')}**")
+    options = ["Dashboard", "Projects", "Contractors", "Contracts", "Payment Requests", "User Management", "Activity Log", "Settings"]
+    choice = st.sidebar.radio("📂 Navigate to:", options)
+    st.session_state.current_page = choice
+
+# === Initialize Session ===
 if "user" not in st.session_state:
     st.session_state.user = None
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Dashboard"
 
-# --- Authenticated User Routing ---
+# === Routing Logic ===
 user = get_current_user()
 
 if not user:
-    # Redirect to login page (Streamlit will auto-load from /pages)
     st.switch_page("pages/01_login.py")
 else:
-    # Sidebar Navigation
     sidebar_navigation(user)
 
-    # Trigger proper page by role (simplified initial routing)
     if st.session_state.current_page == "Dashboard":
         st.switch_page("pages/02_dashboard.py")
     elif st.session_state.current_page == "Projects":
@@ -48,7 +66,6 @@ else:
     elif st.session_state.current_page == "Settings":
         st.switch_page("pages/09_settings.py")
 
-    # Logout Button
     st.sidebar.markdown("---")
     if st.sidebar.button("🔓 Logout"):
         logout()
