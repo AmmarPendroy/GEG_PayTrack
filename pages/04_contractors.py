@@ -3,7 +3,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import uuid
 from datetime import datetime
-from utils.auth import get_access_flags
 
 st.title("👷 Contractors")
 
@@ -11,11 +10,26 @@ st.title("👷 Contractors")
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# === Access control ===
+# === Inline role-based access logic ===
+def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
+    role = user.get("role", "")
+    can_view = can_add = can_edit = can_delete = False
+
+    if page == "contractors":
+        if role in ["Superadmin", "HQ Admin"]:
+            can_view = can_add = can_edit = can_delete = True
+        elif role == "Site PM":
+            can_view = can_add = True
+        elif role in ["Site Accountant", "HQ Accountant"]:
+            can_view = True
+
+    return can_view, can_add, can_edit, can_delete
+
+# === Get user & access rights ===
 user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
-# === Debug (optional)
+# === Optional debug info
 if st.sidebar.checkbox("🔍 Show Debug Info"):
     st.sidebar.markdown(f"🧑 Role: `{user.get('role')}`")
     st.sidebar.markdown(f"🔐 Access → view: `{can_view}`, add: `{can_add}`, edit: `{can_edit}`, delete: `{can_delete}`")
@@ -24,7 +38,7 @@ if not can_view:
     st.error("⛔ You do not have permission to access this page.")
     st.stop()
 
-# === Add Contractor ===
+# === Add Contractor Form ===
 if can_add:
     with st.expander("➕ Add New Contractor", expanded=True):
         with st.form("add_contractor_form"):
@@ -54,7 +68,7 @@ if can_add:
                     except Exception as e:
                         st.error(f"Database error: {e}")
 
-# === Contractor List (Editable) ===
+# === Contractor List with Expanders ===
 st.markdown("### 📋 Contractor List")
 
 try:
