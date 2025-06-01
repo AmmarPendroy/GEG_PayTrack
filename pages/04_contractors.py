@@ -4,7 +4,6 @@ from psycopg2.extras import RealDictCursor
 import uuid
 from datetime import datetime
 
-
 st.title("👷 Contractors")
 
 # === DB connection ===
@@ -27,10 +26,15 @@ def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
     return can_view, can_add, can_edit, can_delete
 
 # === Get user & access rights ===
-user = st.session_state.get("user", {})
+user = st.session_state.get("user")
+
+# Protect against NoneType user
+if not isinstance(user, dict):
+    user = {}
+
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
-
+# === Permission check ===
 if not can_view:
     st.markdown(
         """
@@ -77,9 +81,6 @@ if not can_view:
     )
     st.stop()
 
-
-
-
 # === Add Contractor Form ===
 if can_add:
     with st.expander("➕ Add New Contractor", expanded=True):
@@ -120,10 +121,8 @@ try:
     contractors = cur.fetchall()
     conn.close()
 
-    # === Search bar ===
     search_term = st.text_input("🔍 Search contractors by name, contact, or email").strip().lower()
 
-    # === Filter contractors ===
     filtered_contractors = [
         c for c in contractors if
         search_term in (c["name"] or "").lower()
