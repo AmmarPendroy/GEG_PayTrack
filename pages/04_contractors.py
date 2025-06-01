@@ -31,8 +31,17 @@ can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contracto
 
 
 if not can_view:
-    st.error("⛔ You do not have permission to access this page.")
+    st.markdown(
+        """
+        <div style='text-align: center; padding: 2rem; background-color: #ffe6e6; border: 2px solid red; border-radius: 1rem;'>
+            <h2 style='color: red;'>⛔ Access Denied</h2>
+            <p style='font-size: 1.1rem;'>You do not have permission to access this page.</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     st.stop()
+
 
 # === Add Contractor Form ===
 if can_add:
