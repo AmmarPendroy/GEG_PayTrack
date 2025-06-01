@@ -1,35 +1,51 @@
 import streamlit as st
-from components.layout_components import show_sidebar
-from utils.auth import get_current_user
+from pages import (
+    _01_login,
+    _02_dashboard,
+    _03_projects,
+    _04_contractors,
+    _05_contracts,
+    _06_payment_requests,
+    _07_user_management,
+    _08_activity_log,
+    _09_settings,
+)
+from utils.core import get_current_user, logout
+from components.layout_components import sidebar_navigation
 
-# ---------------------------------------
-# Main App Entry Point
-# ---------------------------------------
-def main():
-    st.set_page_config(page_title="GEG PayTrack", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="GEG PayTrack", layout="wide", page_icon="🏗️")
 
-    # Check if user is already authenticated
-    user = get_current_user()
+# Authenticated session
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-    # Redirect unauthenticated users to the login page
-    if not user:
-        st.switch_page("pages/01_login.py")
-    else:
-        st.session_state.user = user
+user = get_current_user()
 
-        # Show navigation
-        show_sidebar(user)
+if not user:
+    _01_login.show()
+else:
+    sidebar_navigation(user)
 
-        # Show user info
-        st.sidebar.success(f"Logged in as: {user['username']} ({user['role']})")
+    page = st.session_state.get("current_page", "Dashboard")
 
-        # Logout button
-        if st.sidebar.button("Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    if page == "Dashboard":
+        _02_dashboard.show(user)
+    elif page == "Projects":
+        _03_projects.show(user)
+    elif page == "Contractors":
+        _04_contractors.show(user)
+    elif page == "Contracts":
+        _05_contracts.show(user)
+    elif page == "Payment Requests":
+        _06_payment_requests.show(user)
+    elif page == "User Management":
+        _07_user_management.show(user)
+    elif page == "Activity Log":
+        _08_activity_log.show(user)
+    elif page == "Settings":
+        _09_settings.show(user)
 
-        # Page rendering is handled by Streamlit's multipage feature via /pages folder
-
-if __name__ == "__main__":
-    main()
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔓 Logout"):
+        logout()
+        st.experimental_rerun()
