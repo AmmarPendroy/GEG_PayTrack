@@ -6,30 +6,29 @@ from datetime import date, datetime
 
 st.title("🏗️ Projects")
 
-# DB connection
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# Access control logic
 def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
     role = user.get("role", "")
     can_view = can_add = can_edit = can_delete = False
-
     if page == "projects":
         if role in ["Superadmin", "HQ Admin"]:
             can_view = can_add = can_edit = can_delete = True
-        elif role in ["Site PM", "HQ Accountant", "Site Accountant"]:
+        elif role == "Site PM":
+            can_view = can_add = True
+        elif role in ["Site Accountant", "HQ Accountant"]:
             can_view = True
-
     return can_view, can_add, can_edit, can_delete
 
-# Get current user
+# === Load user ===
 user = st.session_state.get("user")
-if not isinstance(user, dict): user = {}
+if not isinstance(user, dict):
+    user = {}
 
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="projects")
 
-# Access denied animation
+# === Show access denied if not allowed ===
 if not can_view:
     st.markdown(
         """
@@ -65,7 +64,7 @@ if not can_view:
     )
     st.stop()
 
-# Add Project
+# === Add Project ===
 if can_add:
     with st.expander("➕ Add New Project", expanded=True):
         with st.form("add_project_form"):
@@ -96,13 +95,26 @@ if can_add:
                     except Exception as e:
                         st.error(f"Database error: {e}")
 
-# Search projects
+# === Load Projects ===
 st.markdown("### 📋 Project List")
 try:
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM projects ORDER BY created_at DESC")
-    projects = cur.fetchall()
+
+    if user.get("role") in ["Superadmin", "HQ Admin", "HQ Accountant"]:
+        cur.execute("SELECT * FROM projects ORDER BY created_at DESC")
+        projects = cur.fetchall()
+    else:
+        # Show only assigned projects
+        cur.execute("""
+            SELECT p.*
+            FROM projects p
+            JOIN project_assignments pa ON p.id = pa.project_id
+            WHERE pa.user_id = %s
+            ORDER BY p.created_at DESC
+        """, (user.get("id"),))
+        projects = cur.fetchall()
+
     conn.close()
 
     search_term = st.text_input("🔍 Search projects by name or location").strip().lower()
