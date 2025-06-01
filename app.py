@@ -1,6 +1,6 @@
 import streamlit as st
-from utils.data_handler import authenticate_user
 from components.layout_components import show_sidebar
+from utils.auth import get_current_user
 
 # ---------------------------------------
 # Main App Entry Point
@@ -8,21 +8,20 @@ from components.layout_components import show_sidebar
 def main():
     st.set_page_config(page_title="GEG PayTrack", page_icon="🏗️", layout="wide")
 
-    if "user" not in st.session_state:
-        st.session_state.user = None
+    user = get_current_user()
 
-    if st.session_state.user is None:
-        from pages import 01_login as login_page
-        login_page.login_page()
+    if not user:
+        st.switch_page("pages/01_login.py")
     else:
-        user = st.session_state.user
+        st.session_state.user = user
         show_sidebar(user)
         st.sidebar.success(f"Logged in as: {user['username']} ({user['role']})")
         if st.sidebar.button("Logout"):
-            st.session_state.user = None
-            st.experimental_rerun()
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
 
-        # Actual page rendering handled by pages/* structure
+        # Page rendering handled by Streamlit multi-page routing
 
 if __name__ == "__main__":
     main()
