@@ -24,5 +24,5 @@ def show_sidebar(user):
 # ---------------------------------------
 # Section Header
 # ---------------------------------------
-def section_header(title: str, icon: str = \"📘\"):
-    st.markdown(f\"## {icon} {title}\")
+def section_header(title: str, icon: str = "📘"):
+    st.markdown(f"## {icon} {title}")
