@@ -4,11 +4,10 @@ from datetime import datetime
 from logic.login_handler import login_form
 from logic.contractors import render_contractor_module
 
-
 # === Page Configuration ===
 st.set_page_config(page_title="🏗️ GEG PayTrack", layout="wide", page_icon="🏗️")
 
-# === Utils (inline for now) ===
+# === Utilities ===
 def get_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
@@ -33,7 +32,7 @@ def sidebar_navigation(user):
         logout()
         st.rerun()
 
-# === Initialize Session ===
+# === Session Initialization ===
 if "user" not in st.session_state:
     st.session_state.user = None
 if "current_page" not in st.session_state:
@@ -48,5 +47,27 @@ else:
     sidebar_navigation(user)
     page = st.session_state.current_page
 
-    st.title(f"📄 {page}")
-    st.info("This page is under construction.")
+    # === Page Routing ===
+    if page == "Dashboard":
+        st.title("📊 Dashboard")
+        st.info("This page is under construction.")
+    elif page == "Projects":
+        st.title("🏗️ Projects")
+        st.info("This page is under construction.")
+    elif page == "Contractors":
+        render_contractor_module(user)
+    elif page == "Contracts":
+        st.title("📄 Contracts")
+        st.info("This page is under construction.")
+    elif page == "Payment Requests":
+        st.title("💰 Payment Requests")
+        st.info("This page is under construction.")
+    elif page == "User Management":
+        st.title("👥 User Management")
+        st.info("This page is under construction.")
+    elif page == "Activity Log":
+        st.title("📜 Activity Log")
+        st.info("This page is under construction.")
+    elif page == "Settings":
+        st.title("⚙️ Settings")
+        st.info("This page is under construction.")
