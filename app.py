@@ -2,6 +2,8 @@ import streamlit as st
 import uuid
 from datetime import datetime
 from logic.login_handler import login_form
+from logic.contractors import render_contractor_module
+
 
 # === Page Configuration ===
 st.set_page_config(page_title="🏗️ GEG PayTrack", layout="wide", page_icon="🏗️")
