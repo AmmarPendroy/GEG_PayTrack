@@ -31,9 +31,12 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
 
+import time
+
 if not can_view:
-    st.toast("⛔ Access Denied! You do not have permission.", icon="🚫")
-    st.stop()
+    st.warning("🚫 You are not authorized to view this page. Redirecting you to the dashboard...")
+    time.sleep(2.5)
+    st.switch_page("pages/02_dashboard.py")
 
 
 
