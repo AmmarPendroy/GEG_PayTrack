@@ -30,17 +30,30 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
 
+from streamlit_lottie import st_lottie
+import requests
+
+def load_lottieurl(url):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
 if not can_view:
+    lottie_lock = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_u4yrau.json")
+    st_lottie(lottie_lock, height=200, key="lock")
+
     st.markdown(
         """
-        <div style='text-align: center; padding: 2rem; background-color: #ffe6e6; border: 2px solid red; border-radius: 1rem;'>
-            <h2 style='color: red;'>⛔ Access Denied</h2>
-            <p style='font-size: 1.1rem;'>You do not have permission to access this page.</p>
+        <div style='text-align: center;'>
+            <h2 style='color: #ff4d4d;'>🔒 Access Restricted</h2>
+            <p>You do not have permission to view this page.</p>
         </div>
         """,
         unsafe_allow_html=True
     )
     st.stop()
+
 
 
 # === Add Contractor Form ===
