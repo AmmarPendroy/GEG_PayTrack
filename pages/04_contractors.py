@@ -31,11 +31,7 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
 
-import streamlit as st
-import time
-
 if not can_view:
-    # Inject custom styles and animations
     st.markdown(
         """
         <style>
@@ -58,21 +54,18 @@ if not can_view:
             border-radius: 1.5rem;
             animation: fadeIn 1s ease-in-out, pulse 2s infinite;
             width: 70%;
-            margin: 5rem auto;
+            margin: 4rem auto;
         }
 
         .error-box h2 {
             color: #ff1a1a;
             font-size: 2rem;
-            margin-bottom: 1rem;
         }
 
         .error-box p {
             font-size: 1.2rem;
             color: #660000;
-            margin-bottom: 1.5rem;
         }
-
         </style>
 
         <div class="error-box">
@@ -82,18 +75,8 @@ if not can_view:
         """,
         unsafe_allow_html=True
     )
-
-    # Optional: Button to return to dashboard
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🔙 Back to Dashboard"):
-            st.switch_page("pages/02_dashboard.py")
-
-    # Optional: Auto-redirect (wait 3 seconds then redirect)
-    time.sleep(3)
-    st.switch_page("pages/02_dashboard.py")
-
     st.stop()
+
 
 
 
