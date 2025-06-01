@@ -11,11 +11,11 @@ st.title("👷 Contractors")
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# === Access control flags ===
+# === Access control ===
 user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
-# === Optional debug info ===
+# === Debug (optional)
 if st.sidebar.checkbox("🔍 Show Debug Info"):
     st.sidebar.markdown(f"🧑 Role: `{user.get('role')}`")
     st.sidebar.markdown(f"🔐 Access → view: `{can_view}`, add: `{can_add}`, edit: `{can_edit}`, delete: `{can_delete}`")
@@ -24,7 +24,7 @@ if not can_view:
     st.error("⛔ You do not have permission to access this page.")
     st.stop()
 
-# === Add Contractor Form ===
+# === Add Contractor ===
 if can_add:
     with st.expander("➕ Add New Contractor", expanded=True):
         with st.form("add_contractor_form"):
@@ -34,9 +34,7 @@ if can_add:
             phone = st.text_input("Phone")
             address = st.text_area("Address")
 
-            submitted = st.form_submit_button("Add Contractor")
-
-            if submitted:
+            if st.form_submit_button("Add Contractor"):
                 if not name:
                     st.warning("Contractor name is required.")
                 else:
@@ -56,7 +54,7 @@ if can_add:
                     except Exception as e:
                         st.error(f"Database error: {e}")
 
-# === Contractor List ===
+# === Contractor List (Editable) ===
 st.markdown("### 📋 Contractor List")
 
 try:
@@ -81,9 +79,7 @@ try:
                             email = st.text_input("Email", contractor["email"] or "", key=f"email_{contractor['id']}")
                             phone = st.text_input("Phone", contractor["phone"] or "", key=f"phone_{contractor['id']}")
                             address = st.text_area("Address", contractor["address"] or "", key=f"addr_{contractor['id']}")
-                            save = st.form_submit_button("💾 Save Changes")
-
-                            if save:
+                            if st.form_submit_button("💾 Save Changes"):
                                 try:
                                     conn2 = get_connection()
                                     cur2 = conn2.cursor()
