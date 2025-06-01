@@ -27,7 +27,8 @@ def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
 
 # === Load user ===
 user = st.session_state.get("user")
-if not isinstance(user, dict): user = {}
+if not isinstance(user, dict):
+    user = {}
 
 can_view, can_add, can_edit, can_delete = get_access_flags(user, "contracts")
 
@@ -166,8 +167,8 @@ try:
 
     search_term = st.text_input("🔍 Search by project, contractor, or title").strip().lower()
     filtered = [
-        c for c in contracts if
-        search_term in (c["title"] or "").lower()
+        c for c in contracts
+        if search_term in (c["title"] or "").lower()
         or search_term in (c["project_name"] or "").lower()
         or search_term in (c["contractor_name"] or "").lower()
     ]
@@ -237,15 +238,18 @@ try:
                         if attachments:
                             st.markdown("**📁 Attachments:**")
                             for file in attachments:
-                                # Retrieve binary data
+                                # Retrieve binary data as memoryview, then convert to bytes
                                 conn4 = get_connection()
                                 cur4 = conn4.cursor()
                                 cur4.execute(
                                     "SELECT file_data FROM contract_attachments WHERE id = %s",
                                     (file["id"],)
                                 )
-                                file_data = cur4.fetchone()["file_data"]
+                                raw = cur4.fetchone()["file_data"]
                                 conn4.close()
+
+                                # Convert memoryview to raw bytes
+                                data_bytes = bytes(raw)
 
                                 st.markdown(
                                     f"📄 **{file['file_name']}** "
@@ -254,12 +258,13 @@ try:
                                 )
                                 st.download_button(
                                     label="⬇️ Download File",
-                                    data=file_data,
+                                    data=data_bytes,
                                     file_name=file["file_name"],
                                     mime=file["file_type"],
                                     key=f"dl_{file['id']}"
                                 )
-                                # Delete attachment button
+
+                                # 🗑 Delete Attachment Button
                                 if can_delete and st.button(
                                     "🗑️ Delete Attachment", key=f"del_att_{file['id']}"
                                 ):
@@ -290,7 +295,7 @@ try:
                             cur2.execute("DELETE FROM contracts WHERE id = %s", (c["id"],))
                             conn2.commit()
                             conn2.close()
-                            st.success("✅ Contract deleted successfully") 
+                            st.success("✅ Contract deleted successfully")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Deletion failed: {e}")
