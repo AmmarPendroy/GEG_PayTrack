@@ -1,19 +1,25 @@
 import streamlit as st
-from utils.data_handler import authenticate_user
 
 # ---------------------------------------
-# Login Page
+# Sidebar with role-based navigation
 # ---------------------------------------
-def login_page():
-    st.title("🔐 GEG PayTrack Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+def show_sidebar(user):
+    role = user.get("role")
+    st.sidebar.title("🧭 Navigation")
 
-    if st.button("Login"):
-        user = authenticate_user(username, password)
-        if user:
-            st.session_state.user = user
-            st.success(f"Welcome, {user['username']} ({user['role']})")
-            st.experimental_rerun()
-        else:
-            st.error("Invalid username or password")
+    # Public to all authenticated users
+    st.sidebar.page_link("pages/02_dashboard.py", label="📊 Dashboard")
+
+    if role in ["Superadmin", "HQ Admin", "Site PM"]:
+        st.sidebar.page_link("pages/03_projects.py", label="🏗️ Projects")
+        st.sidebar.page_link("pages/04_contractors.py", label="👷 Contractors")
+        st.sidebar.page_link("pages/05_contracts.py", label="📄 Contracts")
+
+    if role in ["Site PM", "Site Accountant", "HQ Accountant"]:
+        st.sidebar.page_link("pages/06_payment_requests.py", label="💸 Payment Requests")
+
+    if role in ["Superadmin", "HQ Admin"]:
+        st.sidebar.page_link("pages/07_user_management.py", label="👥 User Management")
+        st.sidebar.page_link("pages/08_activity_log.py", label="📝 Activity Log")
+
+    st.sidebar.page_link("pages/09_settings.py", label="⚙️ Settings")
