@@ -58,7 +58,7 @@ if not can_view:
     .error-box p { font-size: 1.2rem; color: #660000; }
     </style>
     <div class="error-box">
-        <h2>⛔️ Access Denied</h2>
+        <h2>⛔ Access Denied</h2>
         <p>You do not have permission to access this page.</p>
     </div>
     """, unsafe_allow_html=True)
@@ -192,29 +192,36 @@ try:
                     # === Upload Attachments ===
                     if can_edit or can_add:
                         with st.form(f"upload_file_{c['id']}"):
-                            uploaded_file = st.file_uploader("📌 Upload Attachment", type=["pdf", "docx", "jpg", "png"], key=f"file_{c['id']}")
-                            if st.form_submit_button("Upload") and uploaded_file:
+                            uploaded_files = st.file_uploader(
+                                "📎 Upload Attachments",
+                                type=["pdf", "docx", "jpg", "png"],
+                                accept_multiple_files=True,
+                                key=f"file_{c['id']}"
+                            )
+                            if st.form_submit_button("Upload") and uploaded_files:
                                 try:
                                     conn2 = get_connection()
                                     cur2 = conn2.cursor()
-                                    cur2.execute("""
-                                        INSERT INTO contract_attachments (id, contract_id, file_name, file_type, file_data)
-                                        VALUES (%s, %s, %s, %s, %s)
-                                    """, (
-                                        str(uuid.uuid4()),
-                                        c["id"],
-                                        uploaded_file.name,
-                                        uploaded_file.type,
-                                        uploaded_file.read()
-                                    ))
+                                    for uploaded_file in uploaded_files:
+                                        cur2.execute("""
+                                            INSERT INTO contract_attachments (
+                                                id, contract_id, file_name, file_type, file_data
+                                            ) VALUES (%s, %s, %s, %s, %s)
+                                        """, (
+                                            str(uuid.uuid4()),
+                                            c["id"],
+                                            uploaded_file.name,
+                                            uploaded_file.type,
+                                            uploaded_file.read()
+                                        ))
                                     conn2.commit()
                                     conn2.close()
-                                    st.success("✅ File uploaded successfully!")
+                                    st.success("✅ File(s) uploaded successfully!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Upload failed: {e}")
 
-                    # === List Existing Attachments ===
+                    # === List Existing Attachments (no nested expanders) ===
                     try:
                         conn3 = get_connection()
                         cur3 = conn3.cursor()
@@ -230,34 +237,62 @@ try:
                         if attachments:
                             st.markdown("**📁 Attachments:**")
                             for file in attachments:
-                                with st.expander(f"📄 {file['file_name']} ({file['file_type']}) — {file['uploaded_at'].strftime('%Y-%m-%d %H:%M')}"):
-                                    conn4 = get_connection()
-                                    cur4 = conn4.cursor()
-                                    cur4.execute("SELECT file_data FROM contract_attachments WHERE id = %s", (file["id"],))
-                                    file_data = cur4.fetchone()["file_data"]
-                                    conn4.close()
-                                    st.download_button(
-                                        label="⬇️ Download File",
-                                        data=file_data,
-                                        file_name=file["file_name"],
-                                        mime=file["file_type"],
-                                        key=f"dl_{file['id']}"
-                                    )
+                                # Retrieve binary data
+                                conn4 = get_connection()
+                                cur4 = conn4.cursor()
+                                cur4.execute(
+                                    "SELECT file_data FROM contract_attachments WHERE id = %s",
+                                    (file["id"],)
+                                )
+                                file_data = cur4.fetchone()["file_data"]
+                                conn4.close()
+
+                                st.markdown(
+                                    f"📄 **{file['file_name']}** "
+                                    f"({file['file_type']}) — "
+                                    f"{file['uploaded_at'].strftime('%Y-%m-%d %H:%M')}"
+                                )
+                                st.download_button(
+                                    label="⬇️ Download File",
+                                    data=file_data,
+                                    file_name=file["file_name"],
+                                    mime=file["file_type"],
+                                    key=f"dl_{file['id']}"
+                                )
+                                # Delete attachment button
+                                if can_delete and st.button(
+                                    "🗑️ Delete Attachment", key=f"del_att_{file['id']}"
+                                ):
+                                    try:
+                                        conn5 = get_connection()
+                                        cur5 = conn5.cursor()
+                                        cur5.execute(
+                                            "DELETE FROM contract_attachments WHERE id = %s",
+                                            (file["id"],)
+                                        )
+                                        conn5.commit()
+                                        conn5.close()
+                                        st.success("🗑️ Attachment deleted")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Failed to delete attachment: {e}")
+
+                                # Divider between attachments
+                                st.divider()
                     except Exception as e:
                         st.error(f"Failed to load attachments: {e}")
 
                 with col2:
-                    if can_delete and st.button("🗑️ Delete", key=f"del_{c['id']}"):
+                    if can_delete and st.button("🗑️ Delete Contract", key=f"del_{c['id']}"):
                         try:
                             conn2 = get_connection()
                             cur2 = conn2.cursor()
                             cur2.execute("DELETE FROM contracts WHERE id = %s", (c["id"],))
                             conn2.commit()
                             conn2.close()
-                            st.success("✅ Deleted successfully")
+                            st.success("✅ Contract deleted successfully") 
                             st.rerun()
                         except Exception as e:
                             st.error(f"Deletion failed: {e}")
-
 except Exception as e:
     st.error(f"Failed to load contracts: {e}")
