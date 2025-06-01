@@ -11,13 +11,14 @@ st.title("👷 Contractors")
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# === Access control ===
+# === Access control flags ===
 user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
-# === Debug info (helpful for testing) ===
-st.sidebar.markdown(f"🧪 Role: `{user.get('role')}`")
-st.sidebar.markdown(f"🔐 Access → view: `{can_view}`, add: `{can_add}`, edit: `{can_edit}`, delete: `{can_delete}`")
+# === Optional debug info ===
+if st.sidebar.checkbox("🔍 Show Debug Info"):
+    st.sidebar.markdown(f"🧑 Role: `{user.get('role')}`")
+    st.sidebar.markdown(f"🔐 Access → view: `{can_view}`, add: `{can_add}`, edit: `{can_edit}`, delete: `{can_delete}`")
 
 if not can_view:
     st.error("⛔ You do not have permission to access this page.")
@@ -55,7 +56,7 @@ if can_add:
                     except Exception as e:
                         st.error(f"Database error: {e}")
 
-# === View/Edit/Delete Contractors ===
+# === Contractor List ===
 st.markdown("### 📋 Contractor List")
 
 try:
@@ -71,7 +72,7 @@ try:
         for contractor in contractors:
             with st.expander(f"👷 {contractor['name']}"):
                 col1, col2 = st.columns([4, 1])
-                
+
                 with col1:
                     if can_edit:
                         with st.form(f"edit_{contractor['id']}"):
