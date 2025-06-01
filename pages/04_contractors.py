@@ -3,8 +3,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import uuid
 from datetime import datetime
-from streamlit_lottie import st_lottie
-import requests
+
 
 st.title("👷 Contractors")
 
@@ -32,27 +31,8 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
 
-
-
-def load_lottieurl(url):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
-
 if not can_view:
-    lottie_lock = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_u4yrau.json")
-    st_lottie(lottie_lock, height=200, key="lock")
-
-    st.markdown(
-        """
-        <div style='text-align: center;'>
-            <h2 style='color: #ff4d4d;'>🔒 Access Restricted</h2>
-            <p>You do not have permission to view this page.</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.toast("⛔ Access Denied! You do not have permission.", icon="🚫")
     st.stop()
 
 
