@@ -3,6 +3,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import uuid
 from datetime import datetime
+from streamlit_lottie import st_lottie
+import requests
 
 st.title("👷 Contractors")
 
@@ -30,8 +32,7 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_delete = get_access_flags(user, page="contractors")
 
 
-from streamlit_lottie import st_lottie
-import requests
+
 
 def load_lottieurl(url):
     r = requests.get(url)
