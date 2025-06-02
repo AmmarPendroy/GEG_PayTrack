@@ -266,7 +266,7 @@ if can_add:
                         conn.commit()
                         conn.close()
                         st.success("✅ Payment request submitted successfully!")
-                        st.experimental_rerun()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"❌ Failed to submit request: {e}")
 
@@ -367,7 +367,7 @@ try:
                                 conn2.commit()
                                 conn2.close()
                                 st.success("🗑️ Request deleted successfully")
-                                st.experimental_rerun()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Failed to delete request: {e}")
 
@@ -388,7 +388,7 @@ try:
                                 conn3.commit()
                                 conn3.close()
                                 st.success("✅ Request marked as paid")
-                                st.experimental_rerun()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Failed to mark as paid: {e}")
 
@@ -452,7 +452,7 @@ try:
                                             conn6.commit()
                                             conn6.close()
                                             st.success("Attachment deleted")
-                                            st.experimental_rerun()
+                                            st.rerun()
                                         except Exception as e:
                                             st.error(f"❌ Failed to delete attachment: {e}")
                 except Exception:
@@ -495,7 +495,7 @@ try:
                                 conn7.commit()
                                 conn7.close()
                                 st.success("Attachments uploaded successfully")
-                                st.experimental_rerun()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Failed to upload attachments: {e}")
                         else:
