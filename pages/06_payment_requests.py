@@ -93,6 +93,10 @@ if can_add:
     with st.expander("➕ New Payment Request", expanded=True):
         with st.form("add_payment_request"):
             contract_label = st.selectbox("Select Contract", list(contract_map.keys()))
+            project_names = list(set([c['project_name'] for c in contracts]))
+            selected_project = st.selectbox("🧱 Filter by Project (optional)", ["All"] + sorted(project_names))
+            contractor_names = list(set([c.get('contractor_name', '—') for c in contracts]))
+            selected_contractor = st.selectbox("👷 Filter by Contractor (optional)", ["All"] + sorted(contractor_names))
             selected_contract_id = contract_map.get(contract_label)
             contract_info = next((c for c in contracts if c['id'] == selected_contract_id), None)
             if contract_info:
