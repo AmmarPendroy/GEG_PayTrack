@@ -1,13 +1,13 @@
+# File: geg_paytrack/pages/06_payment_requests.py
+
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import uuid
 from datetime import datetime, date
 
-st.set_page_config(
-    page_title="💸 Payment Requests",
-    layout="wide",
-)
+st.set_page_config(page_title="💸 Payment Requests", layout="wide")
+st.title("💸 Payment Requests")
 
 # === DB connection ===
 def get_connection():
@@ -15,33 +15,33 @@ def get_connection():
 
 # === Inline role-based access logic ===
 def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
+    """
+    Returns (can_view, can_add, can_mark_paid, can_delete_attachment) for this page.
+    - Superadmin, HQ Admin can view/add/mark paid/delete attachments
+    - Site PM can view/add
+    - Site Accountant, HQ Accountant can view; only HQ Accountant can mark paid and delete attachments
+    """
     role = user.get("role", "")
-    can_view = can_add = can_edit = can_delete = False
+    can_view = can_add = can_mark_paid = can_delete_attachment = False
 
     if page == "payment_requests":
-        # Allow all roles who can view payment requests
-        if role in ["Superadmin", "HQ Admin", "Site PM", "Site Accountant", "HQ Accountant"]:
-            can_view = True
-        # Only Superadmin and HQ Admin can add new requests
-        if role in ["Superadmin", "HQ Admin", "Site PM", "Site Accountant"]:
-            can_add = True
-        # Only HQ Accountant can mark as paid (edit)
-        if role == "HQ Accountant":
-            can_edit = True
-        # Only Superadmin and HQ Admin can delete
         if role in ["Superadmin", "HQ Admin"]:
-            can_delete = True
+            can_view = can_add = can_mark_paid = can_delete_attachment = True
+        elif role == "Site PM":
+            can_view = can_add = True
+        elif role == "HQ Accountant":
+            can_view = can_mark_paid = can_delete_attachment = True
+        elif role == "Site Accountant":
+            can_view = True
 
-    return can_view, can_add, can_edit, can_delete
+    return can_view, can_add, can_mark_paid, can_delete_attachment
 
 # === Get user & access rights ===
 user = st.session_state.get("user", {})
-
-# Protect against NoneType user
 if not isinstance(user, dict):
     user = {}
 
-can_view, can_add, can_edit, can_delete = get_access_flags(user, page="payment_requests")
+can_view, can_add, can_mark_paid, can_delete_attachment = get_access_flags(user, page="payment_requests")
 
 # === Permission check ===
 if not can_view:
@@ -52,13 +52,11 @@ if not can_view:
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.6); }
             70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
-
         .error-box {
             text-align: center;
             background-color: #ffe6e6;
@@ -69,323 +67,415 @@ if not can_view:
             width: 70%;
             margin: 4rem auto;
         }
-
         .error-box h2 {
             color: #ff1a1a;
             font-size: 2rem;
         }
-
         .error-box p {
             font-size: 1.2rem;
             color: #660000;
         }
         </style>
-
         <div class="error-box">
             <h2>⛔ Access Denied</h2>
             <p>You do not have permission to access this page.</p>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
     st.stop()
 
-st.title("💸 Payment Requests")
-
-# === Helper: Load Contracts (with joined project & contractor info) ===
+# === Helper: load all contracts (with their project & contractor names) ===
 @st.cache_data(show_spinner=False)
 def load_contracts():
+    """
+    Returns a list of dicts: 
+      [{'id': <contract_id>,
+        'title': <contract_title>,
+        'project_name': <project_name>,
+        'contractor_name': <contractor_name>
+       }, ... ]
+    """
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT
+    cur.execute(
+        """
+        SELECT 
             c.id,
             c.title,
             p.name AS project_name,
             ctr.name AS contractor_name
         FROM contracts c
         JOIN projects p ON c.project_id = p.id
-        LEFT JOIN contractors ctr ON c.contractor_id = ctr.id
+        JOIN contractors ctr ON c.contractor_id = ctr.id
         ORDER BY p.name, c.title;
-    """)
+        """
+    )
     rows = cur.fetchall()
     conn.close()
-    return rows
+    contracts = []
+    for r in rows:
+        contracts.append({
+            "id": r["id"],
+            "title": r["title"],
+            "project_name": r["project_name"],
+            "contractor_name": r["contractor_name"],
+        })
+    return contracts
 
-# === Helper: Load Contractors ===
-@st.cache_data(show_spinner=False)
-def load_contractors():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name FROM contractors ORDER BY name ASC;")
-    rows = cur.fetchall()
-    conn.close()
-    return rows
-
-# === Helper: Load Payment Requests (excluding “Submitted”) ===
+# === Helper: load all payment requests (except those with status='Pending') ===
 @st.cache_data(show_spinner=False)
 def load_payment_requests():
+    """
+    Returns a list of dicts, each row from payment_requests joined with:
+      - contract title, project_name, contractor_name
+      - requested_by username
+    Excludes those still Pending (so newly‐created ones will vanish from the list).
+    """
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT
-            pr.*,
-            c.title AS title,
-            u.username AS requested_by_name
+    cur.execute(
+        """
+        SELECT 
+            pr.id,
+            pr.contract_id,
+            pr.requested_by_user_id,
+            pr.requested_date,
+            pr.paid_date,
+            pr.amount_usd,
+            pr.amount_iqd,
+            pr.note,
+            pr.status,
+            pr.created_at,
+            p.title           AS contract_title,
+            p.project_name    AS project_name,
+            p.contractor_name AS contractor_name,
+            u.username        AS requested_by_username
         FROM payment_requests pr
-        JOIN contracts c ON pr.contract_id = c.id
-        JOIN users u ON pr.requested_by = u.id
-        WHERE pr.status != 'Submitted'
+        JOIN (
+            SELECT 
+                c.id,
+                c.title,
+                pj.name      AS project_name,
+                ctr.name     AS contractor_name
+            FROM contracts c
+            JOIN projects pj ON c.project_id = pj.id
+            JOIN contractors ctr ON c.contractor_id = ctr.id
+        ) AS p ON pr.contract_id = p.id
+        JOIN users u ON pr.requested_by_user_id = u.id
+        WHERE pr.status != 'Pending'
         ORDER BY pr.created_at DESC;
-    """)
+        """
+    )
     rows = cur.fetchall()
     conn.close()
     return rows
+
+# === Helper: load contractors (for payment filtering) ===
+@st.cache_data(show_spinner=False)
+def load_contractor_list():
+    """
+    Return a sorted list of all contractor names.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM contractors ORDER BY name;")
+    rows = cur.fetchall()
+    conn.close()
+    return [r["name"] for r in rows]
+
+
+# === Helper: load project list (for payment filtering) ===
+@st.cache_data(show_spinner=False)
+def load_project_list():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM projects ORDER BY name;")
+    rows = cur.fetchall()
+    conn.close()
+    return [r["name"] for r in rows]
+
 
 # === Add New Payment Request Form ===
 if can_add:
     with st.expander("➕ New Payment Request", expanded=False):
-        # Load contracts & contractors once
-        contracts = load_contracts()
-        contractors = load_contractors()
+        with st.form("add_payment_request_form"):
+            # Load current contracts
+            contracts = load_contracts()
+            contract_map = {
+                f"{c['title']} ({c['project_name']}) — {c['contractor_name']}": c["id"]
+                for c in contracts
+            }
+            contract_labels = list(contract_map.keys())
+            contract_labels.sort()
 
-        # Build maps for selection
-        contract_map = {f"{c['title']} ({c['project_name']})": c["id"] for c in contracts}
-        contractor_map = {ctr["name"]: ctr["id"] for ctr in contractors}
-
-        with st.form("add_payment_request"):
-            # Optional filters (not strictly required for selection)
-            project_names = sorted(set([c["project_name"] for c in contracts]))
-            selected_project = st.selectbox("🧱 Filter by Project (optional)", ["All"] + project_names)
-
-            contractor_names = sorted([ctr["name"] for ctr in contractors])
-            selected_contractor = st.selectbox("👷 Contractor", ["All"] + contractor_names)
-
-            # Now build the actual contract selector, potentially filtered
-            filtered_contract_labels = []
-            for c in contracts:
-                if selected_project != "All" and c["project_name"] != selected_project:
-                    continue
-                if selected_contractor != "All" and c["contractor_name"] != selected_contractor:
-                    continue
-                filtered_contract_labels.append(f"{c['title']} ({c['project_name']})")
-            filtered_contract_labels = sorted(filtered_contract_labels)
-
-            contract_label = st.selectbox(
-                "Select Contract",
-                filtered_contract_labels if filtered_contract_labels else ["No matching contracts"]
+            selected_contract_label = st.selectbox(
+                "Select Contract", 
+                ["-- Choose contract --"] + contract_labels,
+                index=0
             )
-            selected_contract_id = contract_map.get(contract_label)
 
-            # Display selected contract’s project and contractor
-            contract_info = next((c for c in contracts if c["id"] == selected_contract_id), None)
-            if contract_info:
-                st.markdown(f"**🧱 Project:** {contract_info['project_name']}")
-                st.markdown(f"**👷 Contractor:** {contract_info.get('contractor_name', '—')}")
+            # If a valid contract is chosen, show its contractor & project as read‐only
+            col1, col2 = st.columns(2)
+            with col1:
+                requested_date = st.date_input("Requested Date", date.today())
+            with col2:
+                paid_date = st.date_input("Paid Date (optional)", None)
 
-            # Date inputs
-            start_date = st.date_input("📅 Start Date", value=date.today())
-            end_date = st.date_input("📅 End Date", value=date.today())
-            requested_date = st.date_input("📆 Requested Date", value=date.today())
-            paid_date = st.date_input("💰 Paid Date (optional)", value=None)
+            # Display the associated Project / Contractor if a contract is chosen
+            contractor_display = ""
+            project_display = ""
+            if selected_contract_label != "-- Choose contract --":
+                sel_id = contract_map[selected_contract_label]
+                # find that dict in contracts
+                for c in contracts:
+                    if c["id"] == sel_id:
+                        contractor_display = c["contractor_name"]
+                        project_display = c["project_name"]
+                        break
 
-            # Amount fields (allow zero / empty)
-            amount_usd = st.number_input("Amount (USD)", min_value=0.0, format="%.2f", step=0.01)
-            amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, format="%.0f", step=1)
+            st.markdown(f"**Contractor Name:** {contractor_display or '—'}")
+            st.markdown(f"**Project Name:** {project_display or '—'}")
+
+            # Amounts
+            amount_usd = st.number_input("Amount (USD)", min_value=0.0, format="%.2f", step=1.0)
+            amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, step=1000.0)
 
             note = st.text_area("Note / Description")
-            uploaded_files = st.file_uploader(
-                "📎 Upload Attachments",
-                type=["pdf", "docx", "jpg", "png", "jpeg"],
-                accept_multiple_files=True
+
+            # Multi‐file uploader for attachments
+            uploads = st.file_uploader(
+                "📎 Upload Proof (You can select or drag multiple files)", 
+                accept_multiple_files=True,
+                type=["pdf", "docx", "jpg", "png", "jpeg"]
             )
 
             if st.form_submit_button("Submit Request"):
-                if not selected_contract_id:
-                    st.error("⚠️ You must select a valid contract.")
+                if selected_contract_label == "-- Choose contract --":
+                    st.warning("Please select a contract before submitting.")
                 else:
-                    try:
-                        conn = get_connection()
-                        cur = conn.cursor()
-                        payment_id = str(uuid.uuid4())
-
-                        # Insert payment request
-                        cur.execute("""
-                            INSERT INTO payment_requests (
-                                id,
-                                contract_id,
-                                requested_by,
-                                amount_usd,
-                                amount_iqd,
-                                note,
-                                status,
-                                start_date,
-                                end_date,
-                                requested_date,
-                                paid_date,
-                                created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            payment_id,
-                            selected_contract_id,
-                            user.get("id"),
-                            amount_usd if amount_usd > 0 else None,
-                            amount_iqd if amount_iqd > 0 else None,
-                            note,
-                            "Submitted",
-                            start_date,
-                            end_date,
-                            requested_date,
-                            paid_date if paid_date else None,
-                            datetime.utcnow()
-                        ))
-
-                        # Insert each uploaded file into payment_request_attachments
-                        for file in uploaded_files:
-                            attachment_id = str(uuid.uuid4())
-                            cur.execute("""
-                                INSERT INTO payment_request_attachments (
-                                    id,
-                                    payment_request_id,
-                                    file_name,
-                                    file_type,
-                                    file_data,
-                                    uploaded_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s)
-                            """, (
-                                attachment_id,
-                                payment_id,
-                                file.name,
-                                file.type,
-                                file.getvalue(),
-                                datetime.utcnow()
-                            ))
-
-                        conn.commit()
-                        conn.close()
-                        st.success("✅ Payment request submitted!")
-                        st.experimental_rerun()
-                    except Exception as e:
-                        st.error(f"❌ Failed to submit request: {e}")
-
-st.markdown("---")
-
-# === Filter and Display Payment Requests List ===
-st.markdown("## 🧾 Payment Request List")
-
-# Filter controls
-col1, col2 = st.columns(2)
-with col1:
-    status_filter = st.selectbox("Filter by Status", ["All", "Submitted", "Approved", "Paid", "Rejected"])
-with col2:
-    date_filter = st.date_input("Show after date", value=None)
-
-# Load all payment requests from DB
-try:
-    requests = load_payment_requests()
-except Exception as e:
-    st.error(f"Failed to load payment requests: {e}")
-    requests = []
-
-# Apply filters
-filtered_requests = []
-for r in requests:
-    # Status filter
-    if status_filter != "All" and r.get("status") != status_filter:
-        continue
-    # Date filter (based on requested_date)
-    if date_filter and r.get("requested_date") and r["requested_date"].date() < date_filter:
-        continue
-    filtered_requests.append(r)
-
-if not filtered_requests:
-    st.info("No payment requests found.")
-else:
-    for pr in filtered_requests:
-        with st.expander(f"📄 {pr['contract_title']} — {pr['requested_by_name']}"):
-            pr_col1, pr_col2 = st.columns([3, 1])
-
-            with pr_col1:
-                st.markdown(f"**👷 Contractor:** {pr.get('contractor_name','—') if 'contractor_name' in pr else '—'}")
-                st.markdown(f"**🧱 Project:** {pr.get('project_name','—') if 'project_name' in pr else '—'}")
-                st.markdown(f"**💲 Amount (USD):** {pr.get('amount_usd','—') or '—'}")
-                st.markdown(f"**💲 Amount (IQD):** {pr.get('amount_iqd','—') or '—'}")
-                st.markdown(f"**📅 Start Date:** {pr.get('start_date', '—')}")
-                st.markdown(f"**📅 End Date:** {pr.get('end_date', '—')}")
-                st.markdown(f"**📆 Requested Date:** {pr.get('requested_date','—')}")
-                st.markdown(f"**💰 Paid Date:** {pr.get('paid_date','—') or '—'}")
-                st.markdown(f"**📝 Note:** {pr.get('note','—')}")
-                st.markdown(f"**📅 Created At:** {pr.get('created_at','—')}")
-                st.markdown(f"**▶️ Status:** {pr.get('status','—')}")
-
-                # === Download Attachments ===
-                try:
-                    conn2 = get_connection()
-                    cur2 = conn2.cursor()
-                    cur2.execute("""
-                        SELECT
-                            id,
-                            file_name,
-                            file_type,
-                            file_data,
-                            uploaded_at
-                        FROM payment_request_attachments
-                        WHERE payment_request_id = %s
-                        ORDER BY uploaded_at DESC;
-                    """, (pr["id"],))
-                    attachments = cur2.fetchall()
-                    conn2.close()
-
-                    if attachments:
-                        st.markdown("**📁 Attachments:**")
-                        for a in attachments:
-                            st.download_button(
-                                label=f"{a['file_name']} ({int(len(a['file_data']))/1024:.1f} KB)",
-                                data=a["file_data"],
-                                file_name=a["file_name"],
-                                mime=a["file_type"]
-                            )
-                except Exception as e:
-                    st.warning(f"⚠️ Cannot load attachments: {e}")
-
-            with pr_col2:
-                # Only HQ Accountant can mark as Paid or change status
-                if can_edit:
-                    new_status = st.selectbox("Update Status", ["Submitted", "Approved", "Paid", "Rejected"], index=["Submitted","Approved","Paid","Rejected"].index(pr.get("status", "Submitted")), key=f"status_{pr['id']}")
-                    if st.button("💾 Save", key=f"save_{pr['id']}"):
+                    new_id = str(uuid.uuid4())
+                    req_by = user.get("id", None)
+                    if not req_by:
+                        st.error("Unable to identify current user (no user ID in session).")
+                    else:
                         try:
-                            conn3 = get_connection()
-                            cur3 = conn3.cursor()
-                            cur3.execute("""
-                                UPDATE payment_requests
-                                SET status = %s,
-                                    paid_date = %s
-                                WHERE id = %s
-                            """, (
-                                new_status,
-                                pr["paid_date"] if new_status == "Paid" else None,
-                                pr["id"]
-                            ))
-                            conn3.commit()
-                            conn3.close()
-                            st.success("✅ Status updated")
+                            conn = get_connection()
+                            cur = conn.cursor()
+                            # Insert into payment_requests
+                            cur.execute(
+                                """
+                                INSERT INTO payment_requests
+                                  (id, contract_id, requested_by_user_id, requested_date, paid_date,
+                                   amount_usd, amount_iqd, note, status, created_at)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s)
+                                """,
+                                (
+                                    new_id,
+                                    contract_map[selected_contract_label],
+                                    req_by,
+                                    requested_date,
+                                    paid_date if paid_date else None,
+                                    amount_usd if amount_usd > 0 else None,
+                                    amount_iqd if amount_iqd > 0 else None,
+                                    note or None,
+                                    datetime.utcnow(),
+                                ),
+                            )
+                            # Insert any uploaded attachments
+                            for f in uploads:
+                                raw_bytes = f.read()
+                                cur.execute(
+                                    """
+                                    INSERT INTO payment_request_attachments
+                                      (id, payment_request_id, file_name, mime_type, data, created_at)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        str(uuid.uuid4()),
+                                        new_id,
+                                        f.name,
+                                        f.type,
+                                        psycopg2.Binary(raw_bytes),
+                                        datetime.utcnow(),
+                                    ),
+                                )
+                            conn.commit()
+                            conn.close()
+                            st.success("✅ Payment request submitted successfully!")
                             st.experimental_rerun()
                         except Exception as e:
-                            st.error(f"❌ Failed to update status: {e}")
+                            st.error(f"❌ Failed to submit request: {e}")
 
-                # Only Superadmin or HQ Admin can delete a payment request
-                if can_delete and st.button("🗑️ Delete", key=f"del_pr_{pr['id']}"):
-                    try:
-                        conn4 = get_connection()
-                        cur4 = conn4.cursor()
-                        # Remove attachments first
-                        cur4.execute("DELETE FROM payment_request_attachments WHERE payment_request_id = %s", (pr["id"],))
-                        # Then remove the payment request
-                        cur4.execute("DELETE FROM payment_requests WHERE id = %s", (pr["id"],))
-                        conn4.commit()
-                        conn4.close()
-                        st.success("✅ Deleted successfully")
-                        st.experimental_rerun()
-                    except Exception as e:
-                        st.error(f"❌ Deletion failed: {e}")
-            st.markdown("---")
+        st.write("---")
+
+
+# === Filter Section ===
+st.markdown("🔍 **Filter Payment Requests**")
+colf1, colf2, colf3 = st.columns([2, 2, 2])
+with colf1:
+    statuses = ["All", "Pending", "Approved", "Paid", "Rejected"]
+    selected_status = st.selectbox("Filter by Status", statuses, index=0)
+with colf2:
+    filter_date = st.date_input("Show requests after", None)
+with colf3:
+    contractor_names = load_contractor_list()
+    selected_contractor = st.selectbox("Filter by Contractor", ["All"] + contractor_names)
+
+st.write("---")
+
+
+# === Load & Display All (non‐Pending) Payment Requests ===
+try:
+    rows = load_payment_requests()
+
+    # Apply filters:
+    filtered = []
+    for r in rows:
+        if selected_status != "All" and r["status"] != selected_status:
+            continue
+        if filter_date and r["requested_date"] < filter_date:
+            continue
+        if selected_contractor != "All" and r["contractor_name"] != selected_contractor:
+            continue
+        filtered.append(r)
+
+    if not filtered:
+        st.info("No payment requests match your filters.")
+    else:
+        for pr in filtered:
+            pr_id = pr["id"]
+            with st.expander(f"📄 Request by {pr['requested_by_username']} — {pr['contract_title']} ({pr['project_name']})", expanded=False):
+                # Display all fields:
+                colA, colB = st.columns([2, 2])
+                with colA:
+                    st.markdown(f"**Contract Title:** {pr['contract_title']}")
+                    st.markdown(f"**Project Name:** {pr['project_name']}")
+                    st.markdown(f"**Contractor Name:** {pr['contractor_name']}")
+                    st.markdown(f"**Requested By:** {pr['requested_by_username']}")
+                    st.markdown(f"**Requested On:** {pr['requested_date']}")
+                    st.markdown(f"**Paid On:** {pr['paid_date'] or '—'}")
+                with colB:
+                    usd_display = f"${pr['amount_usd']:,.2f}" if pr["amount_usd"] else "—"
+                    iqd_display = f"{pr['amount_iqd']:,.0f} IQD" if pr["amount_iqd"] else "—"
+                    st.markdown(f"**Amount (USD):** {usd_display}")
+                    st.markdown(f"**Amount (IQD):** {iqd_display}")
+                    st.markdown(f"**Note:** {pr['note'] or '—'}")
+                    st.markdown(f"**Status:** {pr['status']}")
+
+                st.write("---")
+
+                # If still Pending and user can mark paid:
+                if pr["status"] == "Pending" and can_mark_paid:
+                    if st.button(f"🟢 Mark as Paid", key=f"markpaid_{pr_id}"):
+                        try:
+                            conn = get_connection()
+                            cur = conn.cursor()
+                            cur.execute(
+                                """
+                                UPDATE payment_requests
+                                SET status = 'Paid', paid_date = %s, updated_at = %s
+                                WHERE id = %s
+                                """,
+                                (date.today(), datetime.utcnow(), pr_id),
+                            )
+                            conn.commit()
+                            conn.close()
+                            st.success("Status updated to Paid.")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"❌ Failed to mark as paid: {e}")
+
+                # Multi‐file uploader to add attachments AFTER submission
+                new_uploads = st.file_uploader(
+                    "📎 Upload Additional Proof (multiple files)", 
+                    accept_multiple_files=True,
+                    key=f"upl_after_{pr_id}",
+                    type=["pdf", "docx", "jpg", "png", "jpeg"]
+                )
+                if new_uploads:
+                    if st.button(f"Upload Proof for {pr_id}", key=f"upl_btn_{pr_id}"):
+                        try:
+                            conn = get_connection()
+                            cur = conn.cursor()
+                            for f in new_uploads:
+                                raw_bytes = f.read()
+                                cur.execute(
+                                    """
+                                    INSERT INTO payment_request_attachments
+                                      (id, payment_request_id, file_name, mime_type, data, created_at)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        str(uuid.uuid4()),
+                                        pr_id,
+                                        f.name,
+                                        f.type,
+                                        psycopg2.Binary(raw_bytes),
+                                        datetime.utcnow(),
+                                    ),
+                                )
+                            conn.commit()
+                            conn.close()
+                            st.success("Attachment(s) uploaded.")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"❌ Failed to upload attachment(s): {e}")
+
+                st.write("---")
+
+                # List existing attachments for this payment request
+                try:
+                    conn = get_connection()
+                    cur = conn.cursor()
+                    cur.execute(
+                        """
+                        SELECT id, file_name, mime_type, data, created_at
+                        FROM payment_request_attachments
+                        WHERE payment_request_id = %s
+                        ORDER BY created_at DESC;
+                        """,
+                        (pr_id,),
+                    )
+                    atts = cur.fetchall()
+                    conn.close()
+                except Exception as e:
+                    st.error(f"Failed to load attachments: {e}")
+                    atts = []
+
+                if atts:
+                    st.markdown("**📂 Attachments:**")
+                    for att in atts:
+                        att_id = att["id"]
+                        file_display = f"{att['file_name']} ({round(len(att['data'])/1024, 1)} KB)"
+                        colX, colY = st.columns([5, 1])
+                        with colX:
+                            st.download_button(
+                                label=f"📥 {file_display}",
+                                data=att["data"],
+                                file_name=att["file_name"],
+                                mime=att["mime_type"],
+                                key=f"dl_{att_id}"
+                            )
+                        with colY:
+                            if can_delete_attachment:
+                                if st.button("🗑️", key=f"del_att_{att_id}"):
+                                    try:
+                                        conn = get_connection()
+                                        cur = conn.cursor()
+                                        cur.execute(
+                                            "DELETE FROM payment_request_attachments WHERE id = %s", 
+                                            (att_id,)
+                                        )
+                                        conn.commit()
+                                        conn.close()
+                                        st.success("Attachment deleted.")
+                                        st.experimental_rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Failed to delete attachment: {e}")
+                    st.write("---")
+
+                # End of expander for this single payment request
+
+except Exception as e:
+    st.error(f"Failed to load payment requests: {e}")
