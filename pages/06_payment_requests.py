@@ -81,7 +81,7 @@ def load_contracts():
             ORDER BY c.created_at DESC
         """, (user.get("id"),))
     rows = cur.fetchall()
-    rows = [r for r in rows if r['status'] != 'Submitted']
+    rows = [r for r in rows if r.get('status') != 'Submitted']
     conn.close()
     return rows
 
