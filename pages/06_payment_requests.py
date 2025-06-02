@@ -103,7 +103,13 @@ if can_add:
     conn_c.close()
     contractor_map = {c['name']: c['id'] for c in contractor_rows}
     contractor_names = list(contractor_map.keys())
-    selected_contractor = st.selectbox("👷 Contractor", contractor_names)
+    selected_contractor_name = st.selectbox("👷 Contractor", contractor_names)
+    selected_contractor_id = contractor_map.get(selected_contractor_name)
+except Exception as e:
+    st.warning(f"⚠️ Failed to load contractors: {e}")
+    contractor_map = {}
+    selected_contractor_name = None
+    selected_contractor_id = None
 except Exception as e:
     st.warning(f"⚠️ Failed to load contractors: {e}")
     contractor_map = {}
