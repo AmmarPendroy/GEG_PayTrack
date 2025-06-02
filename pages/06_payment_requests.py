@@ -92,8 +92,8 @@ if can_add:
     with st.expander("➕ New Payment Request", expanded=True):
         with st.form("add_payment_request"):
             contract_label = st.selectbox("Select Contract", list(contract_map.keys()))
-            amount = st.number_input("Amount", min_value=0.0, step=100.0, format="%.2f")
-            currency = st.selectbox("Currency", ["USD", "IQD"])
+            amount_usd = st.number_input("Amount (USD)", min_value=0.0, step=100.0, format="%.2f")
+            amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, step=100000.0, format="%.0f")
             note = st.text_area("Note / Description")
 
             if st.form_submit_button("Submit Request"):
@@ -102,11 +102,13 @@ if can_add:
                     cur = conn.cursor()
                     cur.execute("""
                         INSERT INTO payment_requests (
-                            id, contract_id, requested_by, amount, currency, note, status, created_at
+                            id, contract_id, requested_by, amount_usd, amount_iqd, note, status, created_at
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         str(uuid.uuid4()), contract_map[contract_label], user.get("id"),
-                        amount, currency, note, "Submitted", datetime.utcnow()
+                        amount_usd if amount_usd > 0 else None,
+                        amount_iqd if amount_iqd > 0 else None,
+                        note, "Submitted", datetime.utcnow()
                     ))
                     conn.commit()
                     conn.close()
@@ -154,7 +156,7 @@ try:
         rows = [r for r in rows if r["created_at"].date() >= date_filter]
 
     for r in rows:
-        with st.expander(f"{r['contract_title']} • {r['amount']} {r['currency']} • {r['status']}"):
+        with st.expander(f"{r['contract_title']} • {r.get('amount_usd', '—')} USD / {r.get('amount_iqd', '—')} IQD • {r['status']}"):
             st.markdown(f"**Requested By:** {r['requested_by_name']}")
             st.markdown(f"**Note:** {r['note'] or '—'}")
             st.markdown(f"**Created At:** {r['created_at'].strftime('%Y-%m-%d %H:%M')}")
