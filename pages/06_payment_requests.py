@@ -81,6 +81,7 @@ def load_contracts():
             ORDER BY c.created_at DESC
         """, (user.get("id"),))
     rows = cur.fetchall()
+    rows = [r for r in rows if r['status'] != 'Submitted']
     conn.close()
     return rows
 
@@ -100,25 +101,37 @@ if can_add:
             amount_usd = st.number_input("Amount (USD)", min_value=0.0, step=100.0, format="%.2f")
             amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, step=100000.0, format="%.0f")
             note = st.text_area("Note / Description")
+            uploaded_files = st.file_uploader("📎 Upload Attachments", type=["pdf", "docx", "jpg", "png", "jpeg"], accept_multiple_files=True)
 
             if st.form_submit_button("Submit Request"):
                 try:
                     conn = get_connection()
                     cur = conn.cursor()
+                    payment_id = str(uuid.uuid4())
                     cur.execute("""
                         INSERT INTO payment_requests (
                             id, contract_id, requested_by, amount_usd, amount_iqd, note, status, created_at
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        str(uuid.uuid4()), contract_map[contract_label], user.get("id"),
+                        payment_id, selected_contract_id, user.get("id"),
                         amount_usd if amount_usd > 0 else None,
                         amount_iqd if amount_iqd > 0 else None,
                         note, "Submitted", datetime.utcnow()
                     ))
+                    # Handle attachments
+                    for file in uploaded_files:
+                        cur.execute("""
+                            INSERT INTO contract_attachments (id, contract_id, file_name, file_type, file_data, uploaded_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (
+                            str(uuid.uuid4()), payment_id, file.name, file.type, file.getvalue(), datetime.utcnow()
+                        ))
                     conn.commit()
                     conn.close()
                     st.success("✅ Payment request submitted!")
                     st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to submit request: {e}")
                 except Exception as e:
                     st.error(f"❌ Failed to submit request: {e}")
 
