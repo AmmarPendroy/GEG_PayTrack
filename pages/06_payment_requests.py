@@ -133,7 +133,7 @@ if can_add:
             contractor_labels = list(contractor_map.keys())
 
             contracts = load_contracts()
-            # Build mapping of "Contract Title (Contractor Name)" for all contracts
+            # Build mapping of "Contract Title (Contractor Name)"
             contract_map = {
                 f"{c['contract_title']} ({c['contractor_name']})": c['id']
                 for c in contracts
@@ -220,7 +220,7 @@ if can_add:
                     try:
                         conn = get_connection()
                         cur = conn.cursor()
-                        # Insert into payment_requests
+                        # Insert into payment_requests (uses `requested_by` instead of requested_by_user_id)
                         cur.execute(
                             """
                             INSERT INTO payment_requests
@@ -316,6 +316,7 @@ try:
     # Apply filters
     filtered_rows = []
     for r in rows:
+        # status_filter is lowercase, r["status"] is lowercase
         if status_filter != "All" and r["status"] != status_filter:
             continue
         if show_after_date and r["requested_date"].date() < show_after_date:
@@ -326,9 +327,13 @@ try:
         st.info("No payment requests found.")
     else:
         for req in filtered_rows:
-            expander_label = f"{req['contract_title']} ({req['project_name']}) - {req['contractor_name']} | {req['status'].capitalize()}"
+            # Expand label shows contract / project / contractor / status
+            expander_label = (
+                f"{req['contract_title']} ({req['project_name']}) - {req['contractor_name']} | "
+                f"{req['status'].capitalize()}"
+            )
             with st.expander(expander_label):
-                # Display basic info
+                # Display main details
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.markdown(f"**Project:** {req['project_name']}")
@@ -343,17 +348,18 @@ try:
                     st.markdown(f"**Note:** {req['note'] or '—'}")
                     st.markdown(f"**Status:** {req['status'].capitalize()}")
                 with col2:
+                    # Delete button (only if can_delete)
                     if can_delete:
                         if st.button("🗑️ Delete Request", key=f"del_req_{req['id']}"):
                             try:
                                 conn2 = get_connection()
                                 cur2 = conn2.cursor()
-                                # Delete attachments first
+                                # First delete attachments
                                 cur2.execute(
                                     "DELETE FROM payment_request_attachments WHERE payment_request_id = %s",
                                     (req["id"],),
                                 )
-                                # Delete the request
+                                # Then delete the request row
                                 cur2.execute(
                                     "DELETE FROM payment_requests WHERE id = %s",
                                     (req["id"],),
@@ -365,6 +371,7 @@ try:
                             except Exception as e:
                                 st.error(f"❌ Failed to delete request: {e}")
 
+                    # Mark as Paid (only if can_edit and status == 'submitted')
                     if can_edit and req["status"] == "submitted":
                         if st.button("✅ Mark as Paid", key=f"mark_paid_{req['id']}"):
                             try:
@@ -387,7 +394,8 @@ try:
 
                 st.markdown("---")
                 st.markdown("📎 **Attachments:**")
-                # List attachments
+
+                # List attachments for this request
                 try:
                     conn4 = get_connection()
                     cur4 = conn4.cursor()
@@ -410,7 +418,7 @@ try:
                             colA, colB = st.columns([5, 1])
                             with colA:
                                 st.write(f"📄 {att['filename']} ({att['created_at'].strftime('%Y-%m-%d %H:%M')})")
-                                # Provide download button
+                                # Download button
                                 try:
                                     conn5 = get_connection()
                                     cur5 = conn5.cursor()
@@ -494,5 +502,6 @@ try:
                             st.warning("Please select files to upload.")
 
                 st.markdown("---")
+
 except Exception as e:
     st.error(f"Failed to load payment requests: {e}")
