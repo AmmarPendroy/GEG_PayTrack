@@ -28,7 +28,35 @@ user = st.session_state.get("user", {})
 can_view, can_add, can_edit, can_approve, can_mark_paid = get_access_flags(user, "payment_requests")
 
 if not can_view:
-    st.error("⛔ You do not have permission to access this page.")
+    st.markdown("""
+    <style>
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.6); }
+        70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+    }
+    .error-box {
+        text-align: center;
+        background-color: #ffe6e6;
+        padding: 2rem;
+        border: 2px solid red;
+        border-radius: 1.5rem;
+        animation: fadeIn 1s ease-in-out, pulse 2s infinite;
+        width: 70%;
+        margin: 4rem auto;
+    }
+    .error-box h2 { color: #ff1a1a; font-size: 2rem; }
+    .error-box p { font-size: 1.2rem; color: #660000; }
+    </style>
+    <div class="error-box">
+        <h2>⛔ Access Denied</h2>
+        <p>You do not have permission to access this page.</p>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # === Helper: Load Contracts for user ===
