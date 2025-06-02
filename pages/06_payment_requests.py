@@ -91,6 +91,12 @@ contract_map = {f"{c['title']} ({c['project_name']})": c['id'] for c in contract
 if can_add:
     with st.expander("➕ New Payment Request", expanded=True):
         with st.form("add_payment_request"):
+            # Display selected contract details
+            selected_contract_id = contract_map[contract_label]
+            contract_info = next((c for c in contracts if c['id'] == selected_contract_id), None)
+            if contract_info:
+                st.markdown(f"**🧱 Project:** {contract_info['project_name']}")
+                st.markdown(f"**👷 Contractor:** {contract_info.get('contractor_name', '—')}")
             contract_label = st.selectbox("Select Contract", list(contract_map.keys()))
             amount_usd = st.number_input("Amount (USD)", min_value=0.0, step=100.0, format="%.2f")
             amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, step=100000.0, format="%.0f")
