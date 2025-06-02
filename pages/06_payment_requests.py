@@ -100,6 +100,8 @@ if can_add:
                 st.markdown(f"**👷 Contractor:** {contract_info.get('contractor_name', '—')}")
             amount_usd = st.number_input("Amount (USD)", min_value=0.0, step=100.0, format="%.2f")
             amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, step=100000.0, format="%.0f")
+            start_date = st.date_input("Start Date")
+            end_date = st.date_input("End Date")
             note = st.text_area("Note / Description")
             uploaded_files = st.file_uploader("📎 Upload Attachments", type=["pdf", "docx", "jpg", "png", "jpeg"], accept_multiple_files=True)
 
@@ -110,13 +112,13 @@ if can_add:
                     payment_id = str(uuid.uuid4())
                     cur.execute("""
                         INSERT INTO payment_requests (
-                            id, contract_id, requested_by, amount_usd, amount_iqd, note, status, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            id, contract_id, requested_by, amount_usd, amount_iqd, note, status, start_date, end_date, created_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         payment_id, selected_contract_id, user.get("id"),
                         amount_usd if amount_usd > 0 else None,
                         amount_iqd if amount_iqd > 0 else None,
-                        note, "Submitted", datetime.utcnow()
+                        note, "Submitted", start_date, end_date, datetime.utcnow()
                     ))
                     # Handle attachments
                     for file in uploaded_files:
