@@ -95,6 +95,7 @@ if can_add:
             contract_label = st.selectbox("Select Contract", list(contract_map.keys()))
             project_names = list(set([c['project_name'] for c in contracts]))
             selected_project = st.selectbox("🧱 Filter by Project (optional)", ["All"] + sorted(project_names))
+            try:
             conn_c = get_connection()
             cur_c = conn_c.cursor()
             cur_c.execute("SELECT id, name FROM contractors ORDER BY name ASC")
@@ -102,7 +103,11 @@ if can_add:
             conn_c.close()
             contractor_map = {c['name']: c['id'] for c in contractor_rows}
             contractor_names = list(contractor_map.keys())
-            selected_contractor = st.selectbox("👷 Contractor", contractor_names), ["All"] + sorted(contractor_names))
+            selected_contractor = st.selectbox("👷 Contractor", contractor_names)
+        except Exception as e:
+            st.warning(f"⚠️ Failed to load contractors: {e}")
+            contractor_map = {}
+            selected_contractor = None, ["All"] + sorted(contractor_names))
             selected_contract_id = contract_map.get(contract_label)
             contract_info = next((c for c in contracts if c['id'] == selected_contract_id), None)
             if contract_info:
