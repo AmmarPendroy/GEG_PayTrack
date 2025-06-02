@@ -128,7 +128,7 @@ try:
     cur = conn.cursor()
     if user.get("role") in ["Superadmin", "HQ Admin", "HQ Accountant"]:
         cur.execute("""
-            SELECT pr.*, c.title AS contract_title, u.name AS requested_by_name
+            SELECT pr.*, c.title AS contract_title, u.username AS requested_by_name
             FROM payment_requests pr
             JOIN contracts c ON pr.contract_id = c.id
             JOIN users u ON pr.requested_by = u.id
@@ -136,7 +136,7 @@ try:
         """)
     else:
         cur.execute("""
-            SELECT pr.*, c.title AS contract_title, u.name AS requested_by_name
+            SELECT pr.*, c.title AS contract_title, u.username AS requested_by_name
             FROM payment_requests pr
             JOIN contracts c ON pr.contract_id = c.id
             JOIN users u ON pr.requested_by = u.id
