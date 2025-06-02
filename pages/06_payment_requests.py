@@ -130,7 +130,7 @@ def load_payment_requests():
     cur.execute("""
         SELECT
             pr.*,
-            c.title AS contract_title,
+            c.title AS title,
             u.username AS requested_by_name
         FROM payment_requests pr
         JOIN contracts c ON pr.contract_id = c.id
@@ -150,7 +150,7 @@ if can_add:
         contractors = load_contractors()
 
         # Build maps for selection
-        contract_map = {f"{c['contract_title']} ({c['project_name']})": c["id"] for c in contracts}
+        contract_map = {f"{c['title']} ({c['project_name']})": c["id"] for c in contracts}
         contractor_map = {ctr["name"]: ctr["id"] for ctr in contractors}
 
         with st.form("add_payment_request"):
@@ -168,7 +168,7 @@ if can_add:
                     continue
                 if selected_contractor != "All" and c["contractor_name"] != selected_contractor:
                     continue
-                filtered_contract_labels.append(f"{c['contract_title']} ({c['project_name']})")
+                filtered_contract_labels.append(f"{c['title']} ({c['project_name']})")
             filtered_contract_labels = sorted(filtered_contract_labels)
 
             contract_label = st.selectbox(
