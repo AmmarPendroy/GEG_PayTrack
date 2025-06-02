@@ -224,7 +224,7 @@ if can_add:
                         cur.execute(
                             """
                             INSERT INTO payment_requests
-                            (id, contract_id, requested_by_user_id, requested_date, paid_date, amount_usd, amount_iqd, note, status, created_at)
+                            (id, contract_id, requested_by, requested_date, paid_date, amount_usd, amount_iqd, note, status, created_at)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             RETURNING id
                             """,
@@ -296,7 +296,7 @@ try:
             pr.amount_iqd,
             pr.note,
             pr.status,
-            pr.requested_by_user_id,
+            pr.requested_by,
             pr.created_at,
             c.title AS contract_title,
             p.name AS project_name,
@@ -306,7 +306,7 @@ try:
         LEFT JOIN contracts c ON pr.contract_id = c.id
         LEFT JOIN projects p ON c.project_id = p.id
         LEFT JOIN contractors co ON c.contractor_id = co.id
-        LEFT JOIN users u ON pr.requested_by_user_id = u.id
+        LEFT JOIN users u ON pr.requested_by = u.id
         ORDER BY pr.requested_date DESC
         """
     )
