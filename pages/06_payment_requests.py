@@ -537,7 +537,7 @@ if can_add:
 
                         upload_attachments(new_request_id, attachments)
                         st.success("✅ Payment request submitted successfully!")
-                        st.experimental_rerun()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"❌ Failed to submit request: {e}")
 
@@ -651,7 +651,7 @@ else:
                                     comments=new_comments if new_comments else None,
                                 )
                                 st.success("✅ Changes saved successfully.")
-                                st.experimental_rerun()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Failed to save changes: {e}")
 
@@ -696,7 +696,7 @@ else:
                                     try:
                                         delete_attachment(att["id"])
                                         st.success("Attachment deleted.")
-                                        st.experimental_rerun()
+                                        st.rerun()
                                     except Exception as e:
                                         st.error(f"❌ Could not delete attachment: {e}")
 
@@ -714,7 +714,7 @@ else:
                             try:
                                 upload_attachments(req["id"], more_files)
                                 st.success("New attachments uploaded!")
-                                st.experimental_rerun()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Failed to upload attachments: {e}")
                         else:
@@ -739,7 +739,7 @@ else:
                             conn3.commit()
                             conn3.close()
                             st.success("✅ Request marked as paid.")
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"❌ Failed to mark as paid: {e}")
 
@@ -762,7 +762,7 @@ else:
                             conn2.commit()
                             conn2.close()
                             st.success("✅ Payment request deleted.")
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"❌ Could not delete request: {e}")
 
