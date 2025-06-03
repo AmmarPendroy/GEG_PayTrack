@@ -349,24 +349,6 @@ if not df_all.empty:
         file_name="payment_requests.csv",
         mime="text/csv",
     )
-
-    # Excel buffer (wrapped in try/except to catch missing engine)
-    try:
-        xlsx_buffer = io.BytesIO()
-        with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
-            df_all.to_excel(writer, index=False, sheet_name="PaymentRequests")
-            writer.save()
-        st.download_button(
-            label="💾 Download as Excel",
-            data=xlsx_buffer.getvalue(),
-            file_name="payment_requests.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    except ModuleNotFoundError:
-        st.warning(
-            "⚠️ Excel export is unavailable because the "
-            "`xlsxwriter` engine is not installed. CSV download is still available."
-        )
 else:
     st.info("No payment requests available for export.")
 
