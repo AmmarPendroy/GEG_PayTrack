@@ -568,8 +568,8 @@ else:
                     f"**Requested Date:** {pd.to_datetime(req['requested_date']).strftime('%Y-%m-%d')}"
                 )
 
-                # Only attempt to format paid_date if it is not null
-                if req["paid_date"] is not None:
+                # Only attempt to format paid_date if it is not NaT/NaN
+                if not pd.isna(req["paid_date"]):
                     paid_date_display = pd.to_datetime(req["paid_date"]).strftime("%Y-%m-%d")
                 else:
                     paid_date_display = "—"
@@ -613,7 +613,8 @@ else:
                             "Paid Date (optional)",
                             value=(
                                 pd.to_datetime(req["paid_date"]).date()
-                                if req["paid_date"] else None
+                                if not pd.isna(req["paid_date"])
+                                else None
                             ),
                             key=f"paid_date_edit_{req['id']}",
                         )
@@ -672,14 +673,14 @@ else:
                             )
                             # Fetch content for download
                             try:
-                                conn = get_connection()
-                                cur = conn.cursor(cursor_factory=RealDictCursor)
-                                cur.execute(
+                                conn_download = get_connection()
+                                cur_download = conn_download.cursor(cursor_factory=RealDictCursor)
+                                cur_download.execute(
                                     "SELECT content FROM payment_request_attachments WHERE id = %s",
                                     (att["id"],),
                                 )
-                                data_row = cur.fetchone()
-                                conn.close()
+                                data_row = cur_download.fetchone()
+                                conn_download.close()
                                 if data_row:
                                     file_bytes = data_row["content"].tobytes()
                                     st.download_button(
