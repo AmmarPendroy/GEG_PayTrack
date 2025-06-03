@@ -1,5 +1,3 @@
-# 06_payment_requests.py
-
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -7,11 +5,7 @@ from datetime import datetime, date
 import uuid
 import pandas as pd
 import io
-import matplotlib.pyplot as plt
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Page setup
-# ────────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="💸 Payment Requests", layout="wide")
 st.title("💸 Payment Requests")
 
@@ -173,18 +167,13 @@ def load_payment_requests(status_filter: str | None, start_date_filter: date | N
     rows = cur.fetchall()
     conn.close()
 
-    # rows is a list of RealDictCursor rows (so each r["status"] etc. is available)
-    # We will filter them in‐Python based on status_filter and start_date_filter
+    # Filter in‐Python
     filtered = []
     for r in rows:
-        # Filter by status (if not “All”)
         if status_filter and status_filter != "All" and r["status"] != status_filter:
             continue
-
-        # Filter by requested_date
         if start_date_filter and r["requested_date"].date() < start_date_filter:
             continue
-
         filtered.append(r)
 
     return filtered
@@ -345,12 +334,11 @@ def delete_attachment(attachment_id: str):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 10) “Export Buttons” – CSV + Excel for ALL requests (useful to bypass any filters)
+# 10) “Export Buttons” – CSV + Excel for ALL requests (ignoring filters)
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("📥 Export Payment Requests (All Records)")
 
-# Load ALL payment requests from DB (ignoring filters)
 all_requests = load_payment_requests(status_filter=None, start_date_filter=None)
 df_all = pd.DataFrame(all_requests)
 
@@ -381,41 +369,41 @@ else:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 11) Filter Section + Real‐Time Chart
+# 11) Filter Section + Real‐Time Summary Chart
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("🔍 Filter Payment Requests")
 status_filter = st.selectbox("Filter by Status", ["All", "submitted", "pending", "paid", "rejected"])
 start_date_filter = st.date_input("Show requests after", value=None)
 
-# Reload & filter payment_requests
+# Reload all, then apply Python‐side filtering
 requests = load_payment_requests(status_filter=None, start_date_filter=None)
 df = pd.DataFrame(requests)
 
 if not df.empty:
+    # Convert requested_date column to actual date
+    df["requested_date"] = pd.to_datetime(df["requested_date"]).dt.date
+
     # Filter by status
     if status_filter != "All":
         df = df[df["status"] == status_filter]
 
     # Filter by start_date
     if start_date_filter:
-        df["requested_date"] = pd.to_datetime(df["requested_date"]).dt.date
         df = df[df["requested_date"] >= start_date_filter]
 
-    # Show real‐time bar chart of counts per status
     st.markdown("### 📊 Summary by Status (Filtered)")
     if df.empty:
         st.info("No payment requests match the current filters.")
     else:
+        # Count per status, preserve order
         status_counts = df["status"].value_counts().reindex(
-            ["submitted","pending","paid","rejected"], fill_value=0
+            ["submitted", "pending", "paid", "rejected"], fill_value=0
         )
-        fig, ax = plt.subplots(figsize=(6, 3))
-        status_counts.plot(kind="bar", ax=ax)
-        ax.set_xlabel("Status")
-        ax.set_ylabel("Number of Requests")
-        ax.set_title("Requests by Status (Filtered)")
-        st.pyplot(fig)
+
+        # Use Streamlit’s bar_chart
+        st.bar_chart(status_counts.rename_axis("status").reset_index(name="count"), 
+                     x="status", y="count")
 else:
     st.info("No payment requests found in the database.")
 
@@ -440,7 +428,6 @@ if can_add:
                 f"{c['contract_title']} ({c['project_name']}) — {c['contractor_name']}": c["id"]
                 for c in contracts
             }
-            contract_labels_all = sorted(contract_map.keys())
 
             # Select Project (optional)
             selected_project_label = st.selectbox(
@@ -458,7 +445,7 @@ if can_add:
             else:
                 filtered_contracts = contracts
 
-            # Map for filtered contracts
+            # Build filtered map
             contract_map_filtered = {
                 f"{c['contract_title']} ({c['project_name']}) — {c['contractor_name']}": c["id"]
                 for c in filtered_contracts
@@ -491,7 +478,7 @@ if can_add:
             if selected_contract_label:
                 selected_contract_id = contract_map_filtered[selected_contract_label]
 
-            # Amount fields
+            # Amounts
             amount_usd = st.number_input("Amount (USD)", min_value=0.0, format="%.2f")
             amount_iqd = st.number_input("Amount (IQD)", min_value=0.0, format="%.2f")
 
@@ -528,24 +515,25 @@ if can_add:
                             requested_by=user.get("id"),
                             amount_usd=amount_usd if amount_usd > 0 else None,
                             amount_iqd=amount_iqd if amount_iqd > 0 else None,
-                            note=None,  # we’ll update “note” below
+                            note=None,  # updated below if needed
                             requested_date=requested_date,
                             paid_date=paid_date if paid_date else None,
                             status=status_value,
                             comments=comments if comments else None,
                         )
-                        # Update “note” via a second call if needed
-                        if st.session_state.get("note") is not None:
+
+                        # Update “note” if provided (one extra query):
+                        note_text = st.session_state.get("note")
+                        if note_text:
                             conn2 = get_connection()
                             cur2 = conn2.cursor()
                             cur2.execute(
                                 "UPDATE payment_requests SET note = %s, updated_at = NOW() WHERE id = %s",
-                                (st.session_state["note"], new_request_id),
+                                (note_text, new_request_id),
                             )
                             conn2.commit()
                             conn2.close()
 
-                        # Upload attachments
                         upload_attachments(new_request_id, attachments)
                         st.success("✅ Payment request submitted successfully!")
                         st.experimental_rerun()
@@ -559,11 +547,11 @@ if can_add:
 # 13) “Payment Request List” with Inline Editing & Attachments
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📄 Payment Request List")
+
 if df.empty:
     st.info("No payment requests found for the selected filters.")
 else:
     for idx, req in df.iterrows():
-        # Build expander header
         header = (
             f"{req['contract_title']} — {req['status'].capitalize()} — "
             f"{pd.to_datetime(req['created_at']).strftime('%Y-%m-%d')}"
@@ -579,8 +567,14 @@ else:
                 st.markdown(f"**Project:** {req['project_name']}")
                 st.markdown(f"**Contractor:** {req['contractor_name']}")
                 st.markdown(f"**Requested By:** {req['requested_by_name'] or '—'}")
-                st.markdown(f"**Requested Date:** {pd.to_datetime(req['requested_date']).strftime('%Y-%m-%d')}")
-                st.markdown(f"**Paid Date:** {pd.to_datetime(req['paid_date']).strftime('%Y-%m-%d') if req['paid_date'] else '—'}")
+                st.markdown(
+                    f"**Requested Date:** {pd.to_datetime(req['requested_date']).strftime('%Y-%m-%d')}"
+                )
+                paid_date_display = (
+                    pd.to_datetime(req["paid_date"]).strftime("%Y-%m-%d")
+                    if req["paid_date"] else "—"
+                )
+                st.markdown(f"**Paid Date:** {paid_date_display}")
                 st.markdown(f"**Amount (USD):** {req['amount_usd'] or '—'}")
                 st.markdown(f"**Amount (IQD):** {req['amount_iqd'] or '—'}")
                 st.markdown(f"**Note:** {req['note'] or '—'}")
@@ -596,40 +590,43 @@ else:
                             min_value=0.0,
                             value=float(req["amount_usd"] or 0.0),
                             step=0.01,
-                            key=f"usd_edit_{req['id']}"
+                            key=f"usd_edit_{req['id']}",
                         )
                         new_amount_iqd = st.number_input(
                             "Amount (IQD)",
                             min_value=0.0,
                             value=float(req["amount_iqd"] or 0.0),
                             step=1.0,
-                            key=f"iqd_edit_{req['id']}"
+                            key=f"iqd_edit_{req['id']}",
                         )
                         new_note = st.text_area(
                             "Note / Description",
                             value=req["note"] or "",
-                            key=f"note_edit_{req['id']}"
+                            key=f"note_edit_{req['id']}",
                         )
                         new_requested_date = st.date_input(
                             "Requested Date",
                             value=pd.to_datetime(req["requested_date"]).date(),
-                            key=f"req_date_edit_{req['id']}"
+                            key=f"req_date_edit_{req['id']}",
                         )
                         new_paid_date = st.date_input(
                             "Paid Date (optional)",
-                            value=pd.to_datetime(req["paid_date"]).date() if req["paid_date"] else None,
-                            key=f"paid_date_edit_{req['id']}"
+                            value=pd.to_datetime(req["paid_date"]).date()
+                            if req["paid_date"] else None,
+                            key=f"paid_date_edit_{req['id']}",
                         )
                         new_status = st.selectbox(
                             "Status",
                             options=["submitted", "pending", "paid", "rejected"],
-                            index=["submitted", "pending", "paid", "rejected"].index(req["status"]),
-                            key=f"status_edit_{req['id']}"
+                            index=["submitted", "pending", "paid", "rejected"].index(
+                                req["status"]
+                            ),
+                            key=f"status_edit_{req['id']}",
                         )
                         new_comments = st.text_area(
                             "Comment for HQ",
                             value=req["comments"] or "",
-                            key=f"comments_edit_{req['id']}"
+                            key=f"comments_edit_{req['id']}",
                         )
 
                         if st.form_submit_button("💾 Save Changes"):
@@ -679,7 +676,7 @@ else:
                         "Upload more files",
                         accept_multiple_files=True,
                         type=["pdf", "jpg", "jpeg", "png", "docx"],
-                        key=f"more_upload_{req['id']}"
+                        key=f"more_upload_{req['id']}",
                     )
                     if st.button("Upload", key=f"upload_more_{req['id']}"):
                         if more_files:
@@ -739,4 +736,3 @@ else:
                             st.error(f"❌ Could not delete request: {e}")
 
             st.markdown("---")
-
