@@ -354,17 +354,23 @@ if not df_all.empty:
         mime="text/csv",
     )
 
-    # Excel buffer
-    xlsx_buffer = io.BytesIO()
-    with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
-        df_all.to_excel(writer, index=False, sheet_name="PaymentRequests")
-        writer.save()
-    st.download_button(
-        label="💾 Download as Excel",
-        data=xlsx_buffer.getvalue(),
-        file_name="payment_requests.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    # Excel buffer (wrapped in try/except to catch missing engine)
+    try:
+        xlsx_buffer = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
+            df_all.to_excel(writer, index=False, sheet_name="PaymentRequests")
+            writer.save()
+        st.download_button(
+            label="💾 Download as Excel",
+            data=xlsx_buffer.getvalue(),
+            file_name="payment_requests.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except ModuleNotFoundError:
+        st.warning(
+            "⚠️ Excel export is unavailable because the "
+            "`xlsxwriter` engine is not installed. CSV download is still available."
+        )
 else:
     st.info("No payment requests available for export.")
 
@@ -378,8 +384,8 @@ status_filter = st.selectbox("Filter by Status", ["All", "submitted", "pending",
 start_date_filter = st.date_input("Show requests after", value=None)
 
 # Reload all, then apply Python‐side filtering
-requests = load_payment_requests(status_filter=None, start_date_filter=None)
-df = pd.DataFrame(requests)
+requests_df = load_payment_requests(status_filter=None, start_date_filter=None)
+df = pd.DataFrame(requests_df)
 
 if not df.empty:
     # Convert requested_date column to actual date
@@ -523,25 +529,12 @@ if can_add:
                             requested_by=user.get("id"),
                             amount_usd=amount_usd if amount_usd > 0 else None,
                             amount_iqd=amount_iqd if amount_iqd > 0 else None,
-                            note=None,  # You could update “note” via an extra UPDATE if needed
+                            note=None,
                             requested_date=requested_date,
                             paid_date=paid_date if paid_date else None,
                             status=status_value,
                             comments=comments if comments else None,
                         )
-
-                        # If you want to save “note” immediately, you could run an UPDATE here
-                        # Example (uncomment if necessary):
-                        # note_text = st.session_state.get("note")
-                        # if note_text:
-                        #     conn2 = get_connection()
-                        #     cur2 = conn2.cursor()
-                        #     cur2.execute(
-                        #         "UPDATE payment_requests SET note = %s, updated_at = NOW() WHERE id = %s",
-                        #         (note_text, new_request_id),
-                        #     )
-                        #     conn2.commit()
-                        #     conn2.close()
 
                         upload_attachments(new_request_id, attachments)
                         st.success("✅ Payment request submitted successfully!")
@@ -556,10 +549,6 @@ if can_add:
 # 13) “Payment Request List” with Inline Editing & Attachments
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📄 Payment Request List")
-
-if "df" not in locals():
-    # If filters were never loaded (e.g. no records), load an empty DataFrame
-    df = pd.DataFrame()
 
 if df.empty:
     st.info("No payment requests found for the selected filters.")
