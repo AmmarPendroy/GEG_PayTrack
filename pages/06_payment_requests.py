@@ -266,7 +266,6 @@ def update_payment_request(
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 7) Helper to upload attachments for a given payment_request_id
-#    (Removed direct reference to st.uploaded_file_manager.UploadedFile)
 # ────────────────────────────────────────────────────────────────────────────────
 def upload_attachments(request_id: str, files):
     if not files:
@@ -668,7 +667,29 @@ else:
                     for att in attachments:
                         a_col1, a_col2 = st.columns([5, 1])
                         with a_col1:
-                            st.markdown(f"[{att['filename']}]({att['url']})")
+                            st.write(f"📄 {att['filename']} ({att['created_at'].strftime('%Y-%m-%d %H:%M')})")
+                            # Fetch content for download
+                            try:
+                                conn = get_connection()
+                                cur = conn.cursor(cursor_factory=RealDictCursor)
+                                cur.execute(
+                                    "SELECT content FROM payment_request_attachments WHERE id = %s",
+                                    (att["id"],),
+                                )
+                                data_row = cur.fetchone()
+                                conn.close()
+                                if data_row:
+                                    file_bytes = data_row["content"].tobytes()
+                                    st.download_button(
+                                        label="Download",
+                                        data=file_bytes,
+                                        file_name=att["filename"],
+                                        mime=att["mime_type"],
+                                        key=f"download_{att['id']}"
+                                    )
+                            except Exception:
+                                pass
+
                         with a_col2:
                             if can_delete:
                                 if st.button("🗑️", key=f"del_att_{att['id']}"):
