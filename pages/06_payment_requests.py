@@ -129,16 +129,13 @@ def load_contracts():
     return rows
 
 
-@st.cache_data
+# ────────────────────────────────────────────────────────────────────────────────
+# 5) Payment requests loader (no caching, so new inserts/updates appear immediately)
+# ────────────────────────────────────────────────────────────────────────────────
 def load_payment_requests(status_filter: str | None, start_date_filter: date | None):
-    """
-    Loads payment_requests along with joined fields from contracts/projects/contractors/users.
-    Returns a list of dicts.
-    """
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Base query (we'll filter in‐Python afterward)
     cur.execute(
         """
         SELECT
@@ -167,7 +164,7 @@ def load_payment_requests(status_filter: str | None, start_date_filter: date | N
     rows = cur.fetchall()
     conn.close()
 
-    # Filter in‐Python
+    # Filter in‐Python:
     filtered = []
     for r in rows:
         if status_filter and status_filter != "All" and r["status"] != status_filter:
@@ -180,7 +177,7 @@ def load_payment_requests(status_filter: str | None, start_date_filter: date | N
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 5) Helper to insert a new payment_request (plus attachments)
+# 6) Insert a new payment_request (plus attachments)
 # ────────────────────────────────────────────────────────────────────────────────
 def insert_payment_request(
     request_id: str,
@@ -221,7 +218,7 @@ def insert_payment_request(
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 6) Helper to update an existing payment_request
+# 7) Update an existing payment_request
 # ────────────────────────────────────────────────────────────────────────────────
 def update_payment_request(
     request_id: str,
@@ -265,7 +262,7 @@ def update_payment_request(
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 7) Helper to upload attachments for a given payment_request_id
+# 8) Upload attachments for a given payment_request_id
 # ────────────────────────────────────────────────────────────────────────────────
 def upload_attachments(request_id: str, files):
     if not files:
@@ -296,7 +293,7 @@ def upload_attachments(request_id: str, files):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 8) Helper to load attachments for a given request_id
+# 9) Load attachments for a given request_id
 # ────────────────────────────────────────────────────────────────────────────────
 def load_request_attachments(request_id: str):
     conn = get_connection()
@@ -320,7 +317,7 @@ def load_request_attachments(request_id: str):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 9) Helper to delete a single attachment by its ID
+# 10) Delete a single attachment by its ID
 # ────────────────────────────────────────────────────────────────────────────────
 def delete_attachment(attachment_id: str):
     conn = get_connection()
@@ -334,7 +331,7 @@ def delete_attachment(attachment_id: str):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 10) “Export Buttons” – CSV + Excel for ALL requests (ignoring filters)
+# 11) “Export Buttons” – CSV + Excel for ALL payment_requests
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("📥 Export Payment Requests (All Records)")
@@ -375,7 +372,7 @@ else:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 11) Filter Section + Real‐Time Summary Chart
+# 12) Filter Section + Real‐Time Summary Chart
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("🔍 Filter Payment Requests")
@@ -383,8 +380,8 @@ status_filter = st.selectbox("Filter by Status", ["All", "submitted", "pending",
 start_date_filter = st.date_input("Show requests after", value=None)
 
 # Reload all, then apply Python‐side filtering
-requests_df = load_payment_requests(status_filter=None, start_date_filter=None)
-df = pd.DataFrame(requests_df)
+requests_list = load_payment_requests(status_filter=None, start_date_filter=None)
+df = pd.DataFrame(requests_list)
 
 if not df.empty:
     # Convert requested_date column to actual date
@@ -406,7 +403,6 @@ if not df.empty:
         status_counts = df["status"].value_counts().reindex(
             ["submitted", "pending", "paid", "rejected"], fill_value=0
         )
-        # Use Streamlit’s bar_chart
         st.bar_chart(
             status_counts.rename_axis("status").reset_index(name="count"),
             x="status",
@@ -417,7 +413,7 @@ else:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 12) “New Payment Request” Expander (if can_add)
+# 13) “New Payment Request” Expander (if can_add)
 # ────────────────────────────────────────────────────────────────────────────────
 if can_add:
     with st.expander("➕ New Payment Request", expanded=False):
@@ -545,7 +541,7 @@ if can_add:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 13) “Payment Request List” with Inline Editing & Attachments
+# 14) “Payment Request List” with Inline Editing & Attachments
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📄 Payment Request List")
 
