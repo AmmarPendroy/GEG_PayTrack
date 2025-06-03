@@ -164,7 +164,7 @@ def load_payment_requests(status_filter: str | None, start_date_filter: date | N
     rows = cur.fetchall()
     conn.close()
 
-    # Filter in‐Python:
+    # Apply in‐Python filtering
     filtered = []
     for r in rows:
         if status_filter and status_filter != "All" and r["status"] != status_filter:
@@ -399,7 +399,7 @@ if not df.empty:
     if df.empty:
         st.info("No payment requests match the current filters.")
     else:
-        # Count per status, preserve order
+        # Count per status in a fixed order
         status_counts = df["status"].value_counts().reindex(
             ["submitted", "pending", "paid", "rejected"], fill_value=0
         )
@@ -567,10 +567,13 @@ else:
                 st.markdown(
                     f"**Requested Date:** {pd.to_datetime(req['requested_date']).strftime('%Y-%m-%d')}"
                 )
-                paid_date_display = (
-                    pd.to_datetime(req["paid_date"]).strftime("%Y-%m-%d")
-                    if req["paid_date"] else "—"
-                )
+
+                # Only attempt to format paid_date if it is not null
+                if req["paid_date"] is not None:
+                    paid_date_display = pd.to_datetime(req["paid_date"]).strftime("%Y-%m-%d")
+                else:
+                    paid_date_display = "—"
+
                 st.markdown(f"**Paid Date:** {paid_date_display}")
                 st.markdown(f"**Amount (USD):** {req['amount_usd'] or '—'}")
                 st.markdown(f"**Amount (IQD):** {req['amount_iqd'] or '—'}")
@@ -663,7 +666,10 @@ else:
                     for att in attachments:
                         a_col1, a_col2 = st.columns([5, 1])
                         with a_col1:
-                            st.write(f"📄 {att['filename']} ({att['created_at'].strftime('%Y-%m-%d %H:%M')})")
+                            st.write(
+                                f"📄 {att['filename']} "
+                                f"({att['created_at'].strftime('%Y-%m-%d %H:%M')})"
+                            )
                             # Fetch content for download
                             try:
                                 conn = get_connection()
@@ -681,7 +687,7 @@ else:
                                         data=file_bytes,
                                         file_name=att["filename"],
                                         mime=att["mime_type"],
-                                        key=f"download_{att['id']}"
+                                        key=f"download_{att['id']}",
                                     )
                             except Exception:
                                 pass
@@ -703,7 +709,7 @@ else:
                         "Upload more files",
                         accept_multiple_files=True,
                         type=["pdf", "jpg", "jpeg", "png", "docx"],
-                        key=f"more_upload_{req['id']}",
+                        key=f"more_upload_{req['id']}"
                     )
                     if st.button("Upload", key=f"upload_more_{req['id']}"):
                         if more_files:
