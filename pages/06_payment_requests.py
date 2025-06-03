@@ -152,15 +152,15 @@ def load_payment_requests(status_filter: str | None, start_date_filter: date | N
             pr.requested_by,
             pr.comments,
             pr.created_at,
-            co.username AS requested_by_name,
+            u.username AS requested_by_name,
             c.title AS contract_title,
             p.name AS project_name,
-            co2.name AS contractor_name
+            co.name AS contractor_name
         FROM payment_requests pr
-        LEFT JOIN users co ON pr.requested_by = co.id
+        LEFT JOIN users u ON pr.requested_by = u.id
         LEFT JOIN contracts c ON pr.contract_id = c.id
         LEFT JOIN projects p ON c.project_id = p.id
-        LEFT JOIN contractors co2 ON c.contractor_id = co2.id
+        LEFT JOIN contractors co ON c.contractor_id = co.id
         ORDER BY pr.requested_date DESC
         """
     )
@@ -266,8 +266,9 @@ def update_payment_request(
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 7) Helper to upload attachments for a given payment_request_id
+#    (Removed direct reference to st.uploaded_file_manager.UploadedFile)
 # ────────────────────────────────────────────────────────────────────────────────
-def upload_attachments(request_id: str, files: list[st.uploaded_file_manager.UploadedFile]):
+def upload_attachments(request_id: str, files):
     if not files:
         return
     conn = get_connection()
@@ -400,10 +401,12 @@ if not df.empty:
         status_counts = df["status"].value_counts().reindex(
             ["submitted", "pending", "paid", "rejected"], fill_value=0
         )
-
         # Use Streamlit’s bar_chart
-        st.bar_chart(status_counts.rename_axis("status").reset_index(name="count"), 
-                     x="status", y="count")
+        st.bar_chart(
+            status_counts.rename_axis("status").reset_index(name="count"),
+            x="status",
+            y="count",
+        )
 else:
     st.info("No payment requests found in the database.")
 
@@ -487,7 +490,12 @@ if can_add:
             paid_date = st.date_input("Paid Date (optional)", value=None)
 
             # Status
-            status_options = {"submitted": "submitted", "pending": "pending", "paid": "paid", "rejected": "rejected"}
+            status_options = {
+                "submitted": "submitted",
+                "pending": "pending",
+                "paid": "paid",
+                "rejected": "rejected",
+            }
             status_label = st.selectbox("Status", list(status_options.keys()), index=0)
             status_value = status_options[status_label]
 
@@ -498,9 +506,9 @@ if can_add:
 
             # File uploader
             attachments = st.file_uploader(
-                "📎 Upload Attachments (PDF, JPG, PNG, DOCX)", 
-                accept_multiple_files=True, 
-                type=["pdf", "jpg", "jpeg", "png", "docx"]
+                "📎 Upload Attachments (PDF, JPG, PNG, DOCX)",
+                accept_multiple_files=True,
+                type=["pdf", "jpg", "jpeg", "png", "docx"],
             )
 
             if st.form_submit_button("Submit Request"):
@@ -515,24 +523,25 @@ if can_add:
                             requested_by=user.get("id"),
                             amount_usd=amount_usd if amount_usd > 0 else None,
                             amount_iqd=amount_iqd if amount_iqd > 0 else None,
-                            note=None,  # updated below if needed
+                            note=None,  # You could update “note” via an extra UPDATE if needed
                             requested_date=requested_date,
                             paid_date=paid_date if paid_date else None,
                             status=status_value,
                             comments=comments if comments else None,
                         )
 
-                        # Update “note” if provided (one extra query):
-                        note_text = st.session_state.get("note")
-                        if note_text:
-                            conn2 = get_connection()
-                            cur2 = conn2.cursor()
-                            cur2.execute(
-                                "UPDATE payment_requests SET note = %s, updated_at = NOW() WHERE id = %s",
-                                (note_text, new_request_id),
-                            )
-                            conn2.commit()
-                            conn2.close()
+                        # If you want to save “note” immediately, you could run an UPDATE here
+                        # Example (uncomment if necessary):
+                        # note_text = st.session_state.get("note")
+                        # if note_text:
+                        #     conn2 = get_connection()
+                        #     cur2 = conn2.cursor()
+                        #     cur2.execute(
+                        #         "UPDATE payment_requests SET note = %s, updated_at = NOW() WHERE id = %s",
+                        #         (note_text, new_request_id),
+                        #     )
+                        #     conn2.commit()
+                        #     conn2.close()
 
                         upload_attachments(new_request_id, attachments)
                         st.success("✅ Payment request submitted successfully!")
@@ -548,6 +557,10 @@ if can_add:
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📄 Payment Request List")
 
+if "df" not in locals():
+    # If filters were never loaded (e.g. no records), load an empty DataFrame
+    df = pd.DataFrame()
+
 if df.empty:
     st.info("No payment requests found for the selected filters.")
 else:
@@ -560,7 +573,7 @@ else:
             col1, col2 = st.columns([2, 1])
 
             # ──────────────────────────────────
-            # Left column: Details + (if can_edit) Inline Edit Form
+            # Left column: Details + Inline Edit
             # ──────────────────────────────────
             with col1:
                 st.markdown(f"**Contract:** {req['contract_title']}")
@@ -611,8 +624,10 @@ else:
                         )
                         new_paid_date = st.date_input(
                             "Paid Date (optional)",
-                            value=pd.to_datetime(req["paid_date"]).date()
-                            if req["paid_date"] else None,
+                            value=(
+                                pd.to_datetime(req["paid_date"]).date()
+                                if req["paid_date"] else None
+                            ),
                             key=f"paid_date_edit_{req['id']}",
                         )
                         new_status = st.selectbox(
@@ -633,11 +648,17 @@ else:
                             try:
                                 update_payment_request(
                                     request_id=req["id"],
-                                    amount_usd=new_amount_usd if new_amount_usd > 0 else None,
-                                    amount_iqd=new_amount_iqd if new_amount_iqd > 0 else None,
+                                    amount_usd=(
+                                        new_amount_usd if new_amount_usd > 0 else None
+                                    ),
+                                    amount_iqd=(
+                                        new_amount_iqd if new_amount_iqd > 0 else None
+                                    ),
                                     note=new_note if new_note else None,
                                     requested_date=new_requested_date,
-                                    paid_date=new_paid_date if new_paid_date else None,
+                                    paid_date=(
+                                        new_paid_date if new_paid_date else None
+                                    ),
                                     status=new_status,
                                     comments=new_comments if new_comments else None,
                                 )
@@ -647,7 +668,7 @@ else:
                                 st.error(f"❌ Failed to save changes: {e}")
 
             # ──────────────────────────────────
-            # Right column: Attachments + Delete / Mark‐Paid / Delete Request
+            # Right column: Attachments + Actions
             # ──────────────────────────────────
             with col2:
                 st.markdown("### 📎 Attachments")
@@ -718,12 +739,12 @@ else:
                         try:
                             conn2 = get_connection()
                             cur2 = conn2.cursor()
-                            # delete attachments first
+                            # Delete attachments first
                             cur2.execute(
                                 "DELETE FROM payment_request_attachments WHERE payment_request_id = %s",
                                 (req["id"],),
                             )
-                            # delete the request
+                            # Delete the request
                             cur2.execute(
                                 "DELETE FROM payment_requests WHERE id = %s",
                                 (req["id"],),
