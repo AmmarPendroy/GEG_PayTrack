@@ -3,6 +3,4 @@ psycopg2-binary
 bcrypt
 python-dotenv
 uuid
- psycopg2-binary==2.9.6
- streamlit==1.29.0
 +streamlit-cookies-manager>=0.2.0
