@@ -1,32 +1,36 @@
 import streamlit as st
-import uuid
 from datetime import datetime
 from logic.login_handler import login_form
 from components.sidebar import render_sidebar
 
 # === Streamlit Page Configuration ===
-st.set_page_config(page_title="🏗️ GEG PayTrack", layout="wide", page_icon="🏗️")
+st.set_page_config(
+    page_title="🏗️ GEG PayTrack",
+    layout="wide",
+    page_icon="🏗️",
+)
 
 # === Helpers ===
 def get_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
-# === Initialize Session State ===
-if "user" not in st.session_state:
-    st.session_state.user = None
+# === Track current page across navigations ===
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Dashboard"
 
-user = st.session_state.user
+# === Authentication (login_form handles both login & logout) ===
+login_form()
 
-# === Login or Main App View ===
+# If you're not logged in, stop here (login_form will have shown the form)
+user = st.session_state.get("user")
 if not user:
-    login_form()
-else:
-    # Render sidebar and get selected page
-    render_sidebar(user)
-    page = st.session_state.current_page
+    st.stop()
 
-    # === Page Content (Temporary Placeholder) ===
-    st.title(f"📄 {page}")
-    st.info("This page is under construction.")
+# === Main app ===
+# Render your sidebar (this will set st.session_state.current_page)
+render_sidebar(user)
+
+# Then render content for the selected page
+page = st.session_state.current_page
+st.title(f"📄 {page}")
+st.info("This page is under construction.")
