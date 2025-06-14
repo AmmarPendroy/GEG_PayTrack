@@ -20,8 +20,7 @@ if role not in ["Superadmin", "HQ Admin"]:
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# === Load Projects ===
-@st.cache_data
+# === Load Projects (always fresh) ===
 def load_projects():
     conn = get_connection()
     cur = conn.cursor()
