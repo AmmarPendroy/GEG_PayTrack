@@ -20,7 +20,6 @@ def get_connection():
 
 # === Load Projects ===
 @st.cache_data
-
 def load_projects():
     conn = get_connection()
     cur = conn.cursor()
@@ -48,13 +47,14 @@ with st.form("add_user_form"):
         else:
             try:
                 hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                user_id = str(uuid.uuid4())
+
                 conn = get_connection()
                 cur = conn.cursor()
-                user_id = str(uuid.uuid4())
                 cur.execute("""
-                    INSERT INTO users (id, username, full_name, password, role)
+                    INSERT INTO users (id, username, full_name, role, hashed_password)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (user_id, username, full_name, hashed_password, role))
+                """, (user_id, username, full_name, role, hashed_password))
 
                 for p in assign_projects:
                     cur.execute("""
@@ -97,10 +97,10 @@ try:
                 if st.button("🔑 Reset Password", key=f"reset_{u['id']}"):
                     if new_password:
                         try:
+                            new_hash = hashlib.sha256(new_password.encode()).hexdigest()
                             conn = get_connection()
                             cur = conn.cursor()
-                            new_hash = hashlib.sha256(new_password.encode()).hexdigest()
-                            cur.execute("UPDATE users SET password = %s WHERE id = %s", (new_hash, u["id"]))
+                            cur.execute("UPDATE users SET hashed_password = %s WHERE id = %s", (new_hash, u["id"]))
                             conn.commit()
                             conn.close()
                             st.success("✅ Password updated.")
