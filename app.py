@@ -7,30 +7,29 @@ from components.sidebar import render_sidebar
 st.set_page_config(
     page_title="🏗️ GEG PayTrack",
     layout="wide",
-    page_icon="🏗️",
+    page_icon="🏗️"
 )
 
-# === Helpers ===
+# (Optional) helper you can use elsewhere
 def get_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
-# === Track current page across navigations ===
+# === Remember which page we’re on ===
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Dashboard"
 
-# === Authentication (login_form handles both login & logout) ===
+# === Authentication ===
+# This will either hydrate `st.session_state.user` from your cookie,
+# or render the login form and then STOP here.
 login_form()
-
-# If you're not logged in, stop here (login_form will have shown the form)
 user = st.session_state.get("user")
 if not user:
     st.stop()
 
-# === Main app ===
-# Render your sidebar (this will set st.session_state.current_page)
+# === Main App ===
+# Now that we know we have a `user`, render the sidebar and page.
 render_sidebar(user)
 
-# Then render content for the selected page
 page = st.session_state.current_page
 st.title(f"📄 {page}")
 st.info("This page is under construction.")
