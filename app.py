@@ -2,8 +2,6 @@ import streamlit as st
 import uuid
 from datetime import datetime
 from logic.login_handler import login_form
-from logic.login_handler import login_form
-login_form()
 from components.sidebar import render_sidebar
 
 # === Streamlit Page Configuration ===
