@@ -3,6 +3,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import uuid
 import hashlib
+import pandas as pd
 
 st.set_page_config(page_title="👥 User Management", layout="wide")
 st.title("👥 User Management")
@@ -69,6 +70,26 @@ with st.form("add_user_form"):
             except Exception as e:
                 st.error(f"❌ Failed to create user: {e}")
 
+# === Export Users ===
+st.subheader("📤 Export Users")
+try:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.username, u.full_name, u.role, array_to_string(array_agg(p.name), ', ') AS projects
+        FROM users u
+        LEFT JOIN user_projects up ON u.id = up.user_id
+        LEFT JOIN projects p ON up.project_id = p.id
+        GROUP BY u.id
+        ORDER BY u.username
+    """)
+    df_users = pd.DataFrame(cur.fetchall())
+    conn.close()
+    csv = df_users.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download Users as CSV", csv, "users.csv", "text/csv")
+except Exception as e:
+    st.error(f"Failed to export users: {e}")
+
 # === List Users ===
 st.subheader("📋 All Users")
 try:
@@ -85,11 +106,30 @@ try:
     users = cur.fetchall()
     conn.close()
 
+    projects = load_projects()
+    project_map = {p['name']: p['id'] for p in projects}
+    project_names = list(project_map.keys())
+
     for u in users:
         with st.expander(f"👤 {u['username']} ({u['role']})"):
             st.markdown(f"**Full Name:** {u['full_name']}")
-            st.markdown(f"**Role:** {u['role']}")
-            st.markdown(f"**Projects:** {', '.join([p for p in u['projects'] if p]) or '—'}")
+            current_role = st.selectbox("Role", ["Site PM", "Site Accountant", "HQ Accountant", "HQ Admin"], index=["Site PM", "Site Accountant", "HQ Accountant", "HQ Admin"].index(u['role']), key=f"role_{u['id']}")
+            assigned_projects = st.multiselect("Projects", project_names, default=[p for p in u['projects'] if p], key=f"proj_{u['id']}")
+
+            if st.button("💾 Save Changes", key=f"save_{u['id']}"):
+                try:
+                    conn = get_connection()
+                    cur = conn.cursor()
+                    cur.execute("UPDATE users SET role = %s WHERE id = %s", (current_role, u["id"]))
+                    cur.execute("DELETE FROM user_projects WHERE user_id = %s", (u["id"],))
+                    for proj in assigned_projects:
+                        cur.execute("INSERT INTO user_projects (user_id, project_id) VALUES (%s, %s)", (u["id"], project_map[proj]))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ User updated.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to update user: {e}")
 
             col1, col2 = st.columns(2)
             with col1:
