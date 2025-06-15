@@ -3,6 +3,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
+import json
+
 
 # ─── COOKIE MANAGER (persistent across sessions) ───────────────────────────────
 cookies = EncryptedCookieManager(
