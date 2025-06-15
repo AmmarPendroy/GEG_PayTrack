@@ -14,3 +14,8 @@ if not st.session_state.get("user"):
 
 # That’s it — routing happens through Streamlit sidebar
 st.success("✅ Logged in! Use the sidebar to navigate.")
+
+st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.pop("user", None)
+        st.rerun()
