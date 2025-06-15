@@ -18,23 +18,20 @@ user = st.session_state["user"]
 st.success(f"✅ Logged in as **{user['username']}** ({user['role']})")
 
 # ─── Logout Button ─────────────────────────────────────────
+from streamlit_lottie import st_lottie
+import json
+
+def load_lottie(file_path):
+    with open(file_path, "r") as f:
+        return json.load(f)
+
 if st.button("🚪 Logout"):
-    st.markdown("""
-        <style>
-        .fade-out {
-            animation: fadeOut 1s forwards;
-        }
-        @keyframes fadeOut {
-            to { opacity: 0; transform: scale(0.95); }
-        }
-        </style>
-        <div class="fade-out">
-            <h3>👋 Logging you out...</h3>
-        </div>
-        <meta http-equiv="refresh" content="1">
-    """, unsafe_allow_html=True)
+    lottie = load_lottie("animations/logout.json")  # Put a Lottie file in your repo
+    st_lottie(lottie, speed=1, height=200)
+    st.markdown("### Logging out...")
     st.session_state.pop("user", None)
     st.stop()
+
 
 
 # (optional) Add a custom landing screen or instructions
