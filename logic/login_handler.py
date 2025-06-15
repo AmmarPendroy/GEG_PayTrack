@@ -4,41 +4,37 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
-from streamlit_cookies_controller import CookieController
+from streamlit_cookies_manager import EncryptedCookieManager
 
-# ─── COOKIE CONTROLLER SETUP ────────────────────────────────────────────────────
-controller = CookieController()
-# hydrate any existing cookies into controller._cookies
-controller.get_all()
+# ─── 1) COOKIE SETUP ────────────────────────────────────────────────────────────────
+# This manager will read/write an encrypted cookie under the hood.
+cookies = EncryptedCookieManager(
+    prefix="paytrack/",                     # avoid collisions
+    password=st.secrets["cookie_password"], # your 32+ char secret
+)
+# must block until the component loads existing cookies
+if not cookies.ready():
+    st.stop()
 
-# If we have a saved session cookie, restore it to session_state
-if "user" not in st.session_state:
-    saved = controller.get("user_session")
-    if saved is not None:
-        st.session_state.user = saved
+# If we already have a saved session in the cookie, restore it now
+saved = cookies.get("user_session")
+if saved:
+    st.session_state.user = saved
 
-# ─── HELPERS ─────────────────────────────────────────────────────────────────────
-def hash_password(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+# ─── 2) PASSWORD HASHING ────────────────────────────────────────────────────────────
+def hash_password(p: str) -> str:
+    return hashlib.sha256(p.encode()).hexdigest()
 
-# ─── AUTHENTICATION ───────────────────────────────────────────────────────────────
+# ─── 3) AUTHENTICATION ─────────────────────────────────────────────────────────────
 def authenticate_user(username: str, password: str) -> bool:
-    """
-    Check creds, load assigned projects, then persist a cookie that
-    expires in 30 days so you stay logged in across browser restarts.
-    """
-    db_dsn = st.secrets["db_url"]
+    dsn = st.secrets["db_url"]  # your single-line URI
 
     try:
-        # verify creds
-        conn = psycopg2.connect(db_dsn, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
         cur  = conn.cursor()
         cur.execute(
-            """
-            SELECT id, username, role, hashed_password
-            FROM users
-            WHERE username = %s AND is_active = TRUE
-            """,
+            "SELECT id, username, role, hashed_password "
+            "FROM users WHERE username=%s AND is_active=TRUE",
             (username,)
         )
         user = cur.fetchone()
@@ -51,16 +47,16 @@ def authenticate_user(username: str, password: str) -> bool:
         return False
 
     # load assigned projects
-    conn = psycopg2.connect(db_dsn, cursor_factory=RealDictCursor)
+    conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
     cur  = conn.cursor()
     cur.execute(
-        "SELECT project_id FROM user_projects WHERE user_id = %s",
+        "SELECT project_id FROM user_projects WHERE user_id=%s",
         (user["id"],)
     )
     assigned = [r["project_id"] for r in cur.fetchall()]
     conn.close()
 
-    # build our session dict
+    # build the session dict
     session_user = {
         "id":                user["id"],
         "username":          user["username"],
@@ -69,31 +65,30 @@ def authenticate_user(username: str, password: str) -> bool:
     }
     st.session_state.user = session_user
 
-    # persist to cookie for 30 days (2592000 seconds)
-    controller.set(
-        "user_session",
-        session_user,
-        max_age=30 * 24 * 3600
-    )
-    controller.save()
+    # ─── 4) PERSIST TO COOKIE ────────────────────────────────────────────────────────
+    # This writes a browser cookie that lives until the cookie expires (defaults to persistent).
+    cookies["user_session"] = session_user
+    cookies.save()
 
     return True
 
-# ─── LOGOUT ────────────────────────────────────────────────────────────────────────
+# ─── 5) LOGOUT ───────────────────────────────────────────────────────────────────────
 def logout():
     st.session_state.pop("user", None)
-    controller.delete("user_session")
-    controller.save()
+    cookies["user_session"] = None
+    cookies.save()
     st.experimental_rerun()
 
-# ─── LOGIN FORM ────────────────────────────────────────────────────────────────────
+# ─── 6) LOGIN FORM ───────────────────────────────────────────────────────────────────
 def login_form():
+    # if we already have `user` in session_state, show a logout button
     if st.session_state.get("user"):
         st.write(f"👋 Logged in as **{st.session_state.user['username']}**")
         if st.button("🔒 Logout"):
             logout()
         return
 
+    # otherwise, render the login form
     st.subheader("🔐 Login to GEG PayTrack")
     with st.form("login_form"):
         uname  = st.text_input("Username")
