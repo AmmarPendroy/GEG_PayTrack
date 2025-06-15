@@ -10,7 +10,7 @@ cookies   = EncryptedCookieManager(prefix="paytrack/", password=cookie_pw)
 if not cookies.ready():
     st.stop()
 
-# Hydrate session_state from cookie if it exists
+# Hydrate session_state from cookie (if present)
 saved = cookies.get("user_session")
 if saved:
     st.session_state.user = saved
@@ -22,15 +22,19 @@ def hash_password(password: str) -> str:
 # ─── AUTHENTICATION ───────────────────────────────────────────────────────────────
 def authenticate_user(username: str, password: str) -> bool:
     """
-    Verify credentials against the DB URI string, then save assigned_projects
+    Verify credentials against the DB, then save assigned_projects
     and persist the user dict in an encrypted cookie.
     """
-    db_url = st.secrets["db_url"]  # single-line DSN string
+    db_raw = st.secrets["db_url"]
 
     try:
-        # Connect via DSN
-        conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
-        cur  = conn.cursor()
+        # — If secrets["db_url"] is a dict, unpack it; otherwise treat as DSN string:
+        if isinstance(db_raw, dict):
+            conn = psycopg2.connect(**db_raw, cursor_factory=RealDictCursor)
+        else:
+            conn = psycopg2.connect(db_raw, cursor_factory=RealDictCursor)
+
+        cur = conn.cursor()
 
         # 1️⃣ Fetch the user record
         cur.execute(
