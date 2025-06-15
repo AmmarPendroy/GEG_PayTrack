@@ -1,19 +1,21 @@
 import streamlit as st
-from logic.login_handler import login_form
 
-# ─── Page Config ───────────────────────────────────────────
+# ─── 1) PAGE CONFIG (must be the first Streamlit command) ───
 st.set_page_config(
     page_title="🏗️ GEG PayTrack",
     layout="wide",
     page_icon="🏗️",
 )
 
-# ─── Login Guard ───────────────────────────────────────────
+# ─── 2) IMPORTS ─────────────────────────────────────────────
+from logic.login_handler import login_form
+from components.sidebar import render_sidebar
+
+# ─── 3) AUTH CHECK ──────────────────────────────────────────
 if not st.session_state.get("user"):
-    # Show login form
     login_form()
 
-    # Show animated welcome container (below the login form)
+    # Optional login message animation
     st.markdown("""
         <style>
         .login-box {
@@ -35,13 +37,15 @@ if not st.session_state.get("user"):
             <p>Please log in to continue.</p>
         </div>
     """, unsafe_allow_html=True)
+
     st.stop()
 
-# ─── Logged In View ────────────────────────────────────────
+# ─── 4) SIDEBAR + LOGGED-IN UI ─────────────────────────────
 user = st.session_state["user"]
+render_sidebar(user)
+
 st.success(f"✅ Logged in as **{user['username']}** ({user['role']})")
 
-# ─── Logout Button with Animation ──────────────────────────
 if st.button("🚪 Logout"):
     st.markdown("""
         <style>
@@ -60,5 +64,5 @@ if st.button("🚪 Logout"):
     st.session_state.pop("user", None)
     st.stop()
 
-# ─── Landing Message ───────────────────────────────────────
+# ─── 5) MAIN AREA ───────────────────────────────────────────
 st.markdown("👉 Use the left sidebar to navigate between modules.")
