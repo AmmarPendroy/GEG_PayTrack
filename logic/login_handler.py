@@ -2,6 +2,7 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
+from datetime import timedelta, datetime
 from streamlit_cookies_manager import EncryptedCookieManager
 
 # ─── COOKIE SETUP ────────────────────────────────────────────────────────────────
@@ -10,7 +11,7 @@ cookies   = EncryptedCookieManager(prefix="paytrack/", password=cookie_pw)
 if not cookies.ready():
     st.stop()
 
-# Hydrate session_state from cookie (if present)
+# Hydrate session_state from cookie if it exists
 saved = cookies.get("user_session")
 if saved:
     st.session_state.user = saved
@@ -22,19 +23,15 @@ def hash_password(password: str) -> str:
 # ─── AUTHENTICATION ───────────────────────────────────────────────────────────────
 def authenticate_user(username: str, password: str) -> bool:
     """
-    Verify credentials against the DB, then save assigned_projects
-    and persist the user dict in an encrypted cookie.
+    Verify credentials against the DB URI string, then save assigned_projects
+    and persist the user dict in an encrypted, persistent cookie.
     """
-    db_raw = st.secrets["db_url"]
+    db_url = st.secrets["db_url"]  # single-line DSN string
 
     try:
-        # — If secrets["db_url"] is a dict, unpack it; otherwise treat as DSN string:
-        if isinstance(db_raw, dict):
-            conn = psycopg2.connect(**db_raw, cursor_factory=RealDictCursor)
-        else:
-            conn = psycopg2.connect(db_raw, cursor_factory=RealDictCursor)
-
-        cur = conn.cursor()
+        # Connect via DSN
+        conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+        cur  = conn.cursor()
 
         # 1️⃣ Fetch the user record
         cur.execute(
@@ -65,8 +62,13 @@ def authenticate_user(username: str, password: str) -> bool:
                 "assigned_projects": assigned
             }
 
-            # 5️⃣ Save to the encrypted cookie
-            cookies["user_session"] = st.session_state.user
+            # 5️⃣ Save to the encrypted cookie _with_ a 30-day max_age
+            max_age_seconds = 30 * 24 * 3600
+            cookies.set(
+                "user_session",
+                st.session_state.user,
+                max_age=max_age_seconds
+            )
             cookies.save()
 
             conn.close()
@@ -82,7 +84,7 @@ def authenticate_user(username: str, password: str) -> bool:
 def logout():
     """Clear session + cookie, then rerun to show the login form."""
     st.session_state.pop("user", None)
-    cookies["user_session"] = None
+    cookies.delete("user_session")
     cookies.save()
     st.experimental_rerun()
 
