@@ -57,7 +57,7 @@ projects, contractors_list, contracts_list = load_reference_data()
 
 # ─── Sidebar refresh button ───────────────────────────────────────────────────
 if st.sidebar.button("🔄 Refresh Data"):
-    st.experimental_rerun()
+    st.rerun()
 
 # ─── Load all the summary numbers ──────────────────────────────────────────────
 @st.cache_data(ttl=10)
