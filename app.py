@@ -10,7 +10,31 @@ st.set_page_config(
 
 # ─── Login Guard ───────────────────────────────────────────
 if not st.session_state.get("user"):
+    # Show login form
     login_form()
+
+    # Show animated welcome container (below the login form)
+    st.markdown("""
+        <style>
+        .login-box {
+            animation: fadeIn 1s ease-in-out;
+            margin-top: 30px;
+            text-align: center;
+            background-color: #f0f2f6;
+            padding: 1.5rem;
+            border-radius: 1.5rem;
+            border: 1px solid #ccc;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        </style>
+        <div class="login-box">
+            <h3>👋 Welcome to <strong>GEG PayTrack</strong></h3>
+            <p>Please log in to continue.</p>
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # ─── Logged In View ────────────────────────────────────────
