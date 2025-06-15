@@ -1,34 +1,40 @@
 import streamlit as st
+from logic.login_handler import login_form
 
-# ─── 1) page_config must be first ─────────────────────────────────────────
+# ─── Page Config ───────────────────────────────────────────
 st.set_page_config(
     page_title="🏗️ GEG PayTrack",
     layout="wide",
     page_icon="🏗️",
 )
 
-# ─── 2) imports ───────────────────────────────────────────────────────────
-from datetime import datetime
-from logic.login_handler import login_form
-from components.sidebar import render_sidebar
-
-# ─── 3) auth ───────────────────────────────────────────────────────────────
+# ─── Login Guard ───────────────────────────────────────────
 if not st.session_state.get("user"):
     login_form()
     st.stop()
 
-# ─── 4) logout with animation ──────────────────────────────────────────────
-st.sidebar.markdown("---")
-if st.sidebar.button("🚪 Logout"):
-    st.success("👋 Logging out... See you soon!")
-    st.markdown("<meta http-equiv='refresh' content='2'>", unsafe_allow_html=True)
+# ─── Logged In View ────────────────────────────────────────
+user = st.session_state["user"]
+st.success(f"✅ Logged in as **{user['username']}** ({user['role']})")
+
+# ─── Logout Button with Animation ──────────────────────────
+if st.button("🚪 Logout"):
+    st.markdown("""
+        <style>
+        .fade-out {
+            animation: fadeOut 1s forwards;
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: scale(0.95); }
+        }
+        </style>
+        <div class="fade-out">
+            <h3>👋 Logging you out...</h3>
+        </div>
+        <meta http-equiv="refresh" content="1">
+    """, unsafe_allow_html=True)
     st.session_state.pop("user", None)
     st.stop()
 
-# ─── 5) sidebar and routing ────────────────────────────────────────────────
-render_sidebar(st.session_state.user)
-
-# ─── 6) placeholder content ────────────────────────────────────────────────
-page = st.session_state.get("current_page", "Dashboard")
-st.title(f"📄 {page}")
-st.info("This page is under construction.")
+# ─── Landing Message ───────────────────────────────────────
+st.markdown("👉 Use the left sidebar to navigate between modules.")
