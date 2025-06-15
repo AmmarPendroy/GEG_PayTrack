@@ -1,91 +1,91 @@
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 
+# ——— Page Config ———
 st.set_page_config(page_title="📊 Dashboard", layout="wide")
+st.title("📊 Dashboard")
 
-# ─── Access Guard ───────────────────────────────────────────────
-user = st.session_state.get("user", {})
-if not user:
-    st.error("⛔ Unauthorized. Please log in.")
-    st.stop()
-
-# ─── DB Connection ──────────────────────────────────────────────
+# ——— DB Connection ———
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# ─── Refresh Button ─────────────────────────────────────────────
-if st.button("🔄 Refresh Dashboard"):
-    st.experimental_rerun()
+# ——— Load Logged-in User ———
+user = st.session_state.get("user", {})
+role = user.get("role")
 
-# ─── Header ─────────────────────────────────────────────────────
-st.title("📊 Project Overview Dashboard")
-st.markdown("Welcome back, **{}**!".format(user["username"]))
+# ——— Access Check ———
+if not role:
+    st.error("You must be logged in to view the dashboard.")
+    st.stop()
 
-# ─── Metrics Summary ────────────────────────────────────────────
+# ——— Load Summary Data for Dashboard ———
 def load_summary_data():
     conn = get_connection()
     cur = conn.cursor()
 
-    # Filter based on role and assigned projects
     project_filter = ""
-    if user["role"] in ["Site PM", "Site Accountant"]:
-        project_filter = f"""
-            WHERE id IN (
-                SELECT project_id FROM user_projects WHERE user_id = (
-                    SELECT id FROM users WHERE username = %s
-                )
-            )
-        """
+    if role in ["Site PM", "Site Accountant"]:
+        cur.execute("SELECT id FROM users WHERE username = %s", (user["username"],))
+        user_row = cur.fetchone()
+        cur.execute("""
+            SELECT DISTINCT p.id FROM projects p
+            JOIN contracts c ON p.id = c.project_id
+            JOIN payment_requests pr ON c.id = pr.contract_id
+            WHERE pr.requested_by = %s
+        """, (user_row["id"],))
+        project_ids = [str(r["id"]) for r in cur.fetchall()]
+        if project_ids:
+            placeholders = ",".join(["%s"] * len(project_ids))
+            project_filter = f"WHERE p.id IN ({placeholders})"
 
-    # Project Status Counts
+    # Project count
+    cur.execute(f"SELECT COUNT(*) FROM projects p {project_filter}", tuple(project_ids) if project_filter else ())
+    project_count = cur.fetchone()["count"]
+
+    # Payment requests by status
     cur.execute(f"""
-        SELECT status, COUNT(*) as count FROM projects
-        {project_filter}
-        GROUP BY status
-    """, (user["username"],) if project_filter else ())
-    project_rows = cur.fetchall()
+        SELECT pr.status, COUNT(*) AS count
+        FROM payment_requests pr
+        JOIN contracts c ON pr.contract_id = c.id
+        JOIN projects p ON c.project_id = p.id
+        {project_filter.replace('p.id', 'p.id') if project_filter else ''}
+        GROUP BY pr.status
+    """, tuple(project_ids) if project_filter else ())
+    status_counts = {row["status"]: row["count"] for row in cur.fetchall()}
 
-    # Payment Status Counts
-    cur.execute(f"""
-        SELECT status, COUNT(*) as count FROM payments
-        {project_filter.replace("id", "project_id") if project_filter else ""}
-        GROUP BY status
-    """, (user["username"],) if project_filter else ())
-    payment_rows = cur.fetchall()
-
-    # Activity Log (latest 10)
+    # Recent activity log
     cur.execute("""
-        SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 10
+        SELECT a.timestamp, u.username, a.action, a.details
+        FROM activity_log a
+        LEFT JOIN users u ON a.user_id = u.id
+        ORDER BY a.timestamp DESC
+        LIMIT 20
     """)
-    activity = cur.fetchall()
+    activity_log = cur.fetchall()
 
     conn.close()
-    return project_rows, payment_rows, activity
+    return project_count, status_counts, activity_log
 
-projects, payments, activity_log = load_summary_data()
+# ——— Load Live Data ———
+project_count, status_counts, activity_log = load_summary_data()
 
-# ─── Render Project Status Cards ────────────────────────────────
-st.subheader("🏗️ Project Status")
-project_cols = st.columns(len(projects) if projects else 1)
-for i, row in enumerate(projects):
-    with project_cols[i]:
-        st.metric(label=row["status"], value=row["count"])
+# ——— Layout ———
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("🏗️ Projects", project_count)
+col2.metric("📝 Submitted", status_counts.get("submitted", 0))
+col3.metric("💰 Paid", status_counts.get("paid", 0))
+col4.metric("❌ Rejected", status_counts.get("rejected", 0))
 
-# ─── Render Payment Status Cards ────────────────────────────────
-st.subheader("💰 Payment Requests")
-payment_cols = st.columns(len(payments) if payments else 1)
-for i, row in enumerate(payments):
-    with payment_cols[i]:
-        st.metric(label=row["status"], value=row["count"])
+# ——— Activity Log ———
+st.markdown("---")
+st.subheader("📜 Recent Activity Log")
 
-# ─── Render Recent Activity ─────────────────────────────────────
-st.subheader("🕒 Recent Activity")
-if activity_log:
-    df = pd.DataFrame(activity_log)
-    df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
-    st.dataframe(df[["timestamp", "username", "action"]], use_container_width=True)
+if not activity_log:
+    st.info("No recent activities logged.")
 else:
-    st.info("No recent activity logged.")
+    df = pd.DataFrame(activity_log)
+    df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+    st.dataframe(df, use_container_width=True)
