@@ -4,6 +4,8 @@ from psycopg2.extras import RealDictCursor
 import pandas as pd
 import plotly.express as px
 
+st.set_page_config(page_title="📊 Dashboard", layout="wide")  # MUST be first Streamlit call
+
 # ─── DEBUG: Show all DB tables/columns ──────────────────────────────
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
@@ -28,9 +30,8 @@ def show_db_structure():
     else:
         st.warning("No tables found in your database!")
 
-show_db_structure()  # Put this first for easy debugging
+show_db_structure()  # Debug expander at the top
 
-st.set_page_config(page_title="📊 Dashboard", layout="wide")
 st.title("📊 Dashboard")
 
 # ─── Detect USD/IQD columns automatically ───────────────────────────
