@@ -78,6 +78,7 @@ project_count, status_counts, activity_log, recent_payments = load_summary_data(
 st.title("📊 Dashboard")
 st.markdown(f"Welcome back, **{user['username']}**!")
 
+# Refresh
 if st.button("🔄 Refresh"):
     st.experimental_rerun()
 
@@ -88,39 +89,46 @@ col2.metric("📋 Submitted", status_counts.get("submitted", 0))
 col3.metric("💰 Paid",      status_counts.get("paid",      0))
 col4.metric("❌ Rejected",  status_counts.get("rejected",  0))
 
-# — Enhanced Payment status chart
+# — Enhanced Payment status chart with legend & filter
 st.markdown("---")
 st.subheader("📈 Payment Requests by Status")
-if status_counts:
-    # Build DataFrame
-    df_status = pd.DataFrame([
-        {"Status": s.capitalize(), "Count": c}
-        for s, c in status_counts.items()
-    ])
 
-    # Create Altair bar chart with a colorful scheme
+# Status filter control
+all_statuses = list(status_counts.keys())
+selected_statuses = st.multiselect(
+    "Filter statuses", all_statuses, default=all_statuses
+)
+
+# Build DataFrame and apply filter
+df_status = pd.DataFrame([
+    {"Status": s.capitalize(), "Count": c}
+    for s, c in status_counts.items()
+    if s in selected_statuses
+])
+
+if not df_status.empty:
     chart = (
         alt.Chart(df_status)
         .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
         .encode(
             x=alt.X("Status:N", sort="-y", axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Count:Q"),
+            y=alt.Y("Count:Q", title="Number of Requests"),
             color=alt.Color(
                 "Status:N",
-                scale=alt.Scale(scheme="category20"),
-                legend=None
+                scale=alt.Scale(scheme="set3"),
+                legend=alt.Legend(title="Status", orient="right")
             ),
             tooltip=["Status:N", "Count:Q"]
         )
         .properties(
             width="container",
-            height=300,
+            height=350,
             title="Payment Requests by Status"
         )
     )
     st.altair_chart(chart, use_container_width=True)
 else:
-    st.info("No payment requests found.")
+    st.info("No data for the selected statuses.")
 
 # — Recent Payment Requests list
 st.markdown("---")
