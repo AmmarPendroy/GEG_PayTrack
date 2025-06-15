@@ -1,5 +1,11 @@
 import streamlit as st
 
+from components.header import render_header
+
+# ...
+render_header()
+
+
 # ─── 1) page_config must be first ────────────────────────────────────────────────
 st.set_page_config(
     page_title="🏗️ GEG PayTrack",
