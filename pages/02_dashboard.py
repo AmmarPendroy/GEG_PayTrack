@@ -1,49 +1,64 @@
-# pages/02_dashboard.py
-
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
 import plotly.express as px
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Page config
-# ────────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="📊 Dashboard", layout="wide")
-st.title("📊 Dashboard")
-
-# ────────────────────────────────────────────────────────────────────────────────
-# DB connection
-# ────────────────────────────────────────────────────────────────────────────────
-@st.cache_resource
+# ─── DEBUG: Show all DB tables/columns ──────────────────────────────
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Detect USD/IQD column names once
-# ────────────────────────────────────────────────────────────────────────────────
+def show_db_structure():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT table_name, column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        ORDER BY table_name, ordinal_position
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    if rows:
+        df = pd.DataFrame(rows)
+        with st.expander("🔍 Show database tables & columns"):
+            for table, group in df.groupby("table_name"):
+                st.write(f"**Table:** `{table}`")
+                st.write(group[["column_name", "data_type"]].reset_index(drop=True))
+    else:
+        st.warning("No tables found in your database!")
+
+show_db_structure()  # Put this first for easy debugging
+
+st.set_page_config(page_title="📊 Dashboard", layout="wide")
+st.title("📊 Dashboard")
+
+# ─── Detect USD/IQD columns automatically ───────────────────────────
 @st.cache_data(ttl=3600)
 def detect_money_cols():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='contracts'")
-    c_cols = {r["column_name"] for r in cur.fetchall()}
-    usd_c = next((c for c in ["value_usd","contract_value_usd","budget_usd"] if c in c_cols), None)
-    iqd_c = next((c for c in ["value_iqd","contract_value_iqd","budget_iqd"] if c in c_cols), None)
+    try:
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='contracts'")
+        c_cols = {r["column_name"] for r in cur.fetchall()}
+        usd_c = next((c for c in ["value_usd","contract_value_usd","budget_usd"] if c in c_cols), None)
+        iqd_c = next((c for c in ["value_iqd","contract_value_iqd","budget_iqd"] if c in c_cols), None)
 
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='payment_requests'")
-    pr_cols = {r["column_name"] for r in cur.fetchall()}
-    usd_pr = next((c for c in ["amount_usd","paid_amount_usd"] if c in pr_cols), None)
-    iqd_pr = next((c for c in ["amount_iqd","paid_amount_iqd"] if c in pr_cols), None)
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='payment_requests'")
+        pr_cols = {r["column_name"] for r in cur.fetchall()}
+        usd_pr = next((c for c in ["amount_usd","paid_amount_usd"] if c in pr_cols), None)
+        iqd_pr = next((c for c in ["amount_iqd","paid_amount_iqd"] if c in pr_cols), None)
 
-    conn.close()
-    return usd_c, iqd_c, usd_pr, iqd_pr
+        return usd_c, iqd_c, usd_pr, iqd_pr
+    except Exception as e:
+        st.error(f"DB Error: {e}")
+        return None, None, None, None
+    finally:
+        conn.close()
 
 usd_contract_col, iqd_contract_col, usd_pr_col, iqd_pr_col = detect_money_cols()
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Load reference data
-# ────────────────────────────────────────────────────────────────────────────────
+# ─── Load project list for filter ───────────────────────────────────
 @st.cache_data(ttl=600)
 def load_reference_data():
     conn = get_connection()
@@ -55,9 +70,6 @@ def load_reference_data():
 
 projects = load_reference_data()
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Project filter dropdown
-# ────────────────────────────────────────────────────────────────────────────────
 project_options = ["All Projects"] + [p["name"] for p in projects]
 selected_project_name = st.selectbox("📁 Filter Dashboard by Project", project_options)
 selected_project_id = (
@@ -65,9 +77,7 @@ selected_project_id = (
     if selected_project_name != "All Projects" else None
 )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Load summary metrics (filtered by project)
-# ────────────────────────────────────────────────────────────────────────────────
+# ─── Summary data (filtered) ────────────────────────────────────────
 @st.cache_data(ttl=30)
 def load_summary_data(project_id=None):
     conn = get_connection()
@@ -75,19 +85,15 @@ def load_summary_data(project_id=None):
     where = "WHERE c.project_id = %s" if project_id else ""
     params = (project_id,) if project_id else ()
 
-    # Contracts count
     cur.execute(f"SELECT COUNT(*) AS c FROM contracts c {where}", params)
     total_contracts = cur.fetchone()["c"]
 
-    # Contractors count
     cur.execute(f"SELECT COUNT(DISTINCT c.contractor_id) AS c FROM contracts c {where}", params)
     total_contractors = cur.fetchone()["c"]
 
-    # Payment requests count
     cur.execute(f"SELECT COUNT(*) AS c FROM payment_requests pr JOIN contracts c ON pr.contract_id = c.id {where}", params)
     total_requests = cur.fetchone()["c"]
 
-    # Status breakdown
     cur.execute(
         f"SELECT pr.status, COUNT(*) AS c "
         f"FROM payment_requests pr JOIN contracts c ON pr.contract_id = c.id {where} "
@@ -133,7 +139,6 @@ def load_summary_data(project_id=None):
     else:
         paid_iqd = 0
 
-    # Average approval time
     cur.execute(
         f"SELECT AVG(EXTRACT(EPOCH FROM (paid_date - requested_date))/86400) AS avg_days "
         f"FROM payment_requests pr JOIN contracts c ON pr.contract_id = c.id {where} AND paid_date IS NOT NULL",
@@ -159,13 +164,13 @@ def load_summary_data(project_id=None):
 
 data = load_summary_data(project_id=selected_project_id)
 
-# Display filter context
+# ─── Show filter context ────────────────────────────────────────────
 if selected_project_id:
     st.markdown(f"**📁 Viewing data for project:** `{selected_project_name}`")
 else:
     st.markdown("**📁 Viewing data for:** _All Projects_")
 
-# Metrics
+# ─── Metrics ────────────────────────────────────────────────────────
 r1 = st.columns(4)
 r1[0].metric("Total Contracts", data["contracts"])
 r1[1].metric("Contractors", data["contractors"])
@@ -182,7 +187,7 @@ c1, c2 = st.columns(2)
 c1.metric("Budget (USD)", f"{data['budget_usd']:,.2f}")
 c2.metric("Budget (IQD)", f"{data['budget_iqd']:,.0f}")
 
-# Budget vs Actual chart (filtered)
+# ─── Budget vs Actual Chart (filtered) ─────────────────────────────
 ba_df = pd.DataFrame([
     {"Type": "Budget USD", "Amount": data["budget_usd"]},
     {"Type": "Paid USD",   "Amount": data["paid_usd"]},
@@ -193,7 +198,7 @@ fig = px.bar(ba_df, x="Type", y="Amount", text="Amount", title="Budget vs Actual
 fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
 st.plotly_chart(fig, use_container_width=True)
 
-# Pending Payment Requests (filtered)
+# ─── Pending Payment Requests (filtered) ───────────────────────────
 @st.cache_data(ttl=30)
 def load_pending_requests(project_id=None):
     conn = get_connection(); cur = conn.cursor()
@@ -235,12 +240,12 @@ if pending_list:
 else:
     st.info("No pending payment requests.")
 
-# Recent Payment Requests (filtered)
+# ─── Recent Payment Requests (filtered) ────────────────────────────
 @st.cache_data(ttl=30)
 def load_recent_payment_requests(limit=5, project_id=None):
     conn = get_connection(); cur = conn.cursor()
     where = "AND c.project_id = %s" if project_id else ""
-    params = (limit,) + ((project_id,) if project_id else ())
+    params = (project_id,) if project_id else ()
     cur.execute(
         f"""
         SELECT pr.*, c.title    AS contract_title,
@@ -254,7 +259,7 @@ def load_recent_payment_requests(limit=5, project_id=None):
         JOIN users u ON pr.requested_by=u.id
         WHERE TRUE {where}
         ORDER BY pr.created_at DESC
-        LIMIT %s
+        LIMIT {limit}
         """,
         params
     )
