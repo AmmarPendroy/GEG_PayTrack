@@ -71,7 +71,7 @@ def logout():
     st.session_state.pop("user", None)
     cookies["user_session"] = None
     cookies.save()
-    st.experimental_rerun()
+    st.rerun()
 
 # ─── LOGIN FORM ────────────────────────────────────────────────────────────────
 def login_form():
@@ -89,6 +89,6 @@ def login_form():
         if submit:
             if authenticate_user(uname, pwd):
                 st.success("✅ Login successful")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("❌ Invalid username or password")
