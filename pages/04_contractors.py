@@ -26,9 +26,7 @@ def get_access_flags(user: dict, page: str) -> tuple[bool, bool, bool, bool]:
     return can_view, can_add, can_edit, can_delete
 
 # === Get user & access rights ===
-user = st.session_state.get("user")
-
-# Protect against NoneType user
+user = st.session_state.get("user", {})
 if not isinstance(user, dict):
     user = {}
 
@@ -43,13 +41,11 @@ if not can_view:
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.6); }
             70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
-
         .error-box {
             text-align: center;
             background-color: #ffe6e6;
@@ -60,18 +56,9 @@ if not can_view:
             width: 70%;
             margin: 4rem auto;
         }
-
-        .error-box h2 {
-            color: #ff1a1a;
-            font-size: 2rem;
-        }
-
-        .error-box p {
-            font-size: 1.2rem;
-            color: #660000;
-        }
+        .error-box h2 { color: #ff1a1a; font-size: 2rem; }
+        .error-box p { font-size: 1.2rem; color: #660000; }
         </style>
-
         <div class="error-box">
             <h2>⛔ Access Denied</h2>
             <p>You do not have permission to access this page.</p>
@@ -98,18 +85,20 @@ if can_add:
                     try:
                         conn = get_connection()
                         cur = conn.cursor()
-                        cur.execute("""
+                        cur.execute(
+                            """
                             INSERT INTO contractors (id, name, contact_person, email, phone, address, created_at)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            str(uuid.uuid4()), name, contact_person, email, phone, address, datetime.utcnow()
-                        ))
+                            """,
+                            (str(uuid.uuid4()), name, contact_person, email, phone, address, datetime.utcnow())
+                        )
                         conn.commit()
                         conn.close()
                         st.success("✅ Contractor added successfully!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Database error: {e}")
+
 
 # === Load contractors from DB ===
 st.markdown("### 📋 Contractor List")
@@ -123,18 +112,20 @@ try:
 
     search_term = st.text_input("🔍 Search contractors by name, contact, or email").strip().lower()
 
-    filtered_contractors = [
-        c for c in contractors if
-        search_term in (c["name"] or "").lower()
+    filtered = [
+        c for c in contractors
+        if search_term in (c["name"] or "").lower()
         or search_term in (c["contact_person"] or "").lower()
         or search_term in (c["email"] or "").lower()
     ]
 
-    if not filtered_contractors:
+    if not filtered:
         st.info("No matching contractors found.")
     else:
-        for contractor in filtered_contractors:
-            with st.expander(f"👷 {contractor['name']}"):
+        # Enumerate so we can show a simple serial number
+        for idx, contractor in enumerate(filtered, start=1):
+            title = f"{idx}. {contractor['name']}"
+            with st.expander(title):
                 col1, col2 = st.columns([4, 1])
 
                 with col1:
@@ -149,11 +140,14 @@ try:
                                 try:
                                     conn2 = get_connection()
                                     cur2 = conn2.cursor()
-                                    cur2.execute("""
+                                    cur2.execute(
+                                        """
                                         UPDATE contractors
                                         SET name=%s, contact_person=%s, email=%s, phone=%s, address=%s
                                         WHERE id=%s
-                                    """, (name, contact, email, phone, address, contractor['id']))
+                                        """,
+                                        (name, contact, email, phone, address, contractor['id'])
+                                    )
                                     conn2.commit()
                                     conn2.close()
                                     st.success("✅ Updated successfully")
