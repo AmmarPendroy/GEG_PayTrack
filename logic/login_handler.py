@@ -57,7 +57,7 @@ def authenticate_user(username: str, password: str) -> bool:
     st.session_state.user = session_user
 
     # Save to cookie
-    cookies["user_session"] = session_user
+    cookies["user_session"] = json.dumps(session_user)
     cookies.save()
 
     return True
