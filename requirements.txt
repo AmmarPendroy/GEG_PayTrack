@@ -1,8 +1,8 @@
-streamlit==1.45.1
-psycopg2-binary==2.9.10
-bcrypt==4.3.0
-python-dotenv==1.1.0
-streamlit-cookies-manager>=0.2.0
-pandas==2.3.0
-uuid
-streamlit-cookies-controller
+ streamlit==1.45.1
+ psycopg2-binary==2.9.10
+ bcrypt==4.3.0
+ python-dotenv==1.1.0
+-uuid
+-streamlit-cookies-manager>=0.2.0
++uuid
++streamlit-cookies-controller>=0.1.0
