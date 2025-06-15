@@ -30,16 +30,19 @@ def load_summary_data(limit_requests: int = 10):
     project_count = cur.fetchone()["count"]
 
     # Payment requests by status
-    cur.execute("""
+    cur.execute(
+        """
         SELECT status, COUNT(*) AS count
         FROM payment_requests
         GROUP BY status
-    """)
+        """
+    )
     status_rows = cur.fetchall()
     status_counts = {r["status"]: r["count"] for r in status_rows}
 
     # Recent activity log
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             a.timestamp,
             u.username,
@@ -49,16 +52,18 @@ def load_summary_data(limit_requests: int = 10):
         LEFT JOIN users u ON a.performed_by = u.id
         ORDER BY a.timestamp DESC
         LIMIT 20
-    """)
+        """
+    )
     activity_rows = cur.fetchall()
 
     # Recent payment requests with all columns
-    cur.execute(f"""
+    cur.execute(
+        """
         SELECT
             pr.id,
             pr.contract_id,
-            pr.requested_by AS requested_by_id,
-            u.username AS requested_by,
+            pr.requested_by   AS requested_by_id,
+            u.username        AS requested_by,
             pr.requested_date,
             pr.paid_date,
             pr.amount_usd,
@@ -68,20 +73,22 @@ def load_summary_data(limit_requests: int = 10):
             pr.comments,
             pr.created_at,
             pr.updated_at,
-            c.id AS contract_id_join,
-            c.title AS contract_title,
-            p.id AS project_id_join,
-            p.name AS project_name,
-            co.id AS contractor_id_join,
-            co.name AS contractor_name
+            c.id               AS contract_id_join,
+            c.title            AS contract_title,
+            p.id               AS project_id_join,
+            p.name             AS project_name,
+            co.id              AS contractor_id_join,
+            co.name            AS contractor_name
         FROM payment_requests pr
-        LEFT JOIN users u       ON pr.requested_by = u.id
-        LEFT JOIN contracts c   ON pr.contract_id = c.id
-        LEFT JOIN projects p    ON c.project_id = p.id
+        LEFT JOIN users u        ON pr.requested_by = u.id
+        LEFT JOIN contracts c    ON pr.contract_id = c.id
+        LEFT JOIN projects p     ON c.project_id = p.id
         LEFT JOIN contractors co ON c.contractor_id = co.id
         ORDER BY pr.requested_date DESC
         LIMIT %s
-    """, (limit_requests,))
+        """,
+        (limit_requests,)
+    )
     recent_pr_rows = cur.fetchall()
 
     conn.close()
@@ -136,24 +143,37 @@ if not df_status.empty:
 else:
     st.info("No data for the selected statuses.")
 
-# — Recent Payment Requests list (all columns)
+# — Recent Payment Requests list (all columns + Short ID)
 st.markdown("---")
 st.subheader("💸 Recent Payment Requests")
 if recent_payments:
-    df_pr = pd.DataFrame(recent_payments, columns=[
-        "id", "contract_id", "requested_by_id", "requested_by", "requested_date",
-        "paid_date", "amount_usd", "amount_iqd", "note", "status",
-        "comments", "created_at", "updated_at", "contract_id_join",
-        "contract_title", "project_id_join", "project_name",
-        "contractor_id_join", "contractor_name"
-    ])
+    df_pr = pd.DataFrame(
+        recent_payments,
+        columns=[
+            "id", "contract_id", "requested_by_id", "requested_by",
+            "requested_date", "paid_date", "amount_usd", "amount_iqd",
+            "note", "status", "comments", "created_at", "updated_at",
+            "contract_id_join", "contract_title", "project_id_join",
+            "project_name", "contractor_id_join", "contractor_name"
+        ]
+    )
     # Format dates
     df_pr["requested_date"] = pd.to_datetime(df_pr["requested_date"]).dt.strftime("%Y-%m-%d")
     df_pr["paid_date"] = pd.to_datetime(df_pr["paid_date"]).dt.strftime("%Y-%m-%d")
     df_pr["created_at"] = pd.to_datetime(df_pr["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
     df_pr["updated_at"] = pd.to_datetime(df_pr["updated_at"]).dt.strftime("%Y-%m-%d %H:%M")
+
+    # Generate Short ID: projectName-contractorID-serial
+    short_ids = [
+        f"{row['project_name']}-{row['contractor_id_join']}-{idx+1}"
+        for idx, row in df_pr.iterrows()
+    ]
+    df_pr.insert(0, "Short ID", short_ids)
+    # Drop full UUID request ID
+    df_pr.drop(columns=["id"], inplace=True)
+
+    # Rename columns for clarity
     df_pr = df_pr.rename(columns={
-        "id": "Request ID",
         "contract_id": "Contract ID",
         "requested_by_id": "Requested By ID",
         "requested_by": "Requested By",
@@ -166,11 +186,11 @@ if recent_payments:
         "comments": "Comments",
         "created_at": "Created At",
         "updated_at": "Updated At",
-        "contract_id_join": "Contract (ID)",
+        "contract_id_join": "Contract ID (Join)",
         "contract_title": "Contract Title",
-        "project_id_join": "Project (ID)",
+        "project_id_join": "Project ID (Join)",
         "project_name": "Project Name",
-        "contractor_id_join": "Contractor (ID)",
+        "contractor_id_join": "Contractor ID (Join)",
         "contractor_name": "Contractor Name"
     })
     st.dataframe(df_pr, use_container_width=True)
