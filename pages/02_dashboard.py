@@ -102,7 +102,7 @@ st.title("📊 Dashboard")
 st.markdown(f"Welcome back, **{user['username']}**!")
 
 if st.button("🔄 Refresh"):
-    st.experimental_rerun()
+    st.rerun()
 
 # — Summary metrics
 col1, col2, col3, col4 = st.columns(4)
