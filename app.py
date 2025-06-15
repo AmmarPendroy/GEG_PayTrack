@@ -19,8 +19,11 @@ st.success(f"✅ Logged in as **{user['username']}** ({user['role']})")
 
 # ─── Logout Button ─────────────────────────────────────────
 if st.button("🚪 Logout"):
+    st.success("👋 Logging out... See you soon!")
+    st.markdown("<meta http-equiv='refresh' content='2'>", unsafe_allow_html=True)
     st.session_state.pop("user", None)
-    st.rerun()
+    st.stop()
+
 
 # (optional) Add a custom landing screen or instructions
 st.markdown("👉 Use the left sidebar to navigate between modules.")
