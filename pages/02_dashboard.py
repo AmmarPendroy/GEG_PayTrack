@@ -11,6 +11,7 @@ st.set_page_config(page_title="📊 Dashboard", layout="wide")
 
 # ─── 2) Helpers ─────────────────────────────────────────────────
 def get_connection():
+    """Returns a new database connection."""
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
 # ─── 3) Auth guard ──────────────────────────────────────────────
@@ -51,22 +52,33 @@ def load_summary_data(limit_requests: int = 10):
     """)
     activity_rows = cur.fetchall()
 
-    # Recent payment requests
+    # Recent payment requests with all columns
     cur.execute(f"""
         SELECT
             pr.id,
+            pr.contract_id,
+            pr.requested_by AS requested_by_id,
+            u.username AS requested_by,
             pr.requested_date,
-            u.username        AS requester,
-            p.name            AS project,
-            c.title           AS contract,
+            pr.paid_date,
             pr.amount_usd,
             pr.amount_iqd,
+            pr.note,
             pr.status,
-            pr.comments
+            pr.comments,
+            pr.created_at,
+            pr.updated_at,
+            c.id AS contract_id_join,
+            c.title AS contract_title,
+            p.id AS project_id_join,
+            p.name AS project_name,
+            co.id AS contractor_id_join,
+            co.name AS contractor_name
         FROM payment_requests pr
         LEFT JOIN users u       ON pr.requested_by = u.id
         LEFT JOIN contracts c   ON pr.contract_id = c.id
         LEFT JOIN projects p    ON c.project_id = p.id
+        LEFT JOIN contractors co ON c.contractor_id = co.id
         ORDER BY pr.requested_date DESC
         LIMIT %s
     """, (limit_requests,))
@@ -76,7 +88,7 @@ def load_summary_data(limit_requests: int = 10):
     return project_count, status_counts, activity_rows, recent_pr_rows
 
 # Load data
-project_count, status_counts, activity_log, recent_payments = load_summary_data()
+total_projects, status_counts, activity_log, recent_payments = load_summary_data()
 
 # ─── 5) UI Layout ───────────────────────────────────────────────
 st.title("📊 Dashboard")
@@ -87,7 +99,7 @@ if st.button("🔄 Refresh"):
 
 # — Summary metrics
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("🏗️ Total Projects", project_count)
+col1.metric("🏗️ Total Projects", total_projects)
 col2.metric("📋 Submitted", status_counts.get("submitted", 0))
 col3.metric("💰 Paid",      status_counts.get("paid",      0))
 col4.metric("❌ Rejected",  status_counts.get("rejected",  0))
@@ -97,9 +109,7 @@ st.markdown("---")
 st.subheader("📈 Payment Requests by Status")
 
 all_statuses = list(status_counts.keys())
-selected_statuses = st.multiselect(
-    "Filter statuses", all_statuses, default=all_statuses
-)
+selected_statuses = st.multiselect("Filter statuses", all_statuses, default=all_statuses)
 
 df_status = pd.DataFrame([
     {"Status": s.capitalize(), "Count": c}
@@ -126,23 +136,42 @@ if not df_status.empty:
 else:
     st.info("No data for the selected statuses.")
 
-# — Recent Payment Requests list (expanded columns) ───────────────
+# — Recent Payment Requests list (all columns)
 st.markdown("---")
 st.subheader("💸 Recent Payment Requests")
 if recent_payments:
-    df_pr = pd.DataFrame(recent_payments)
-    df_pr["requested_date"] = pd.to_datetime(df_pr["requested_date"]) \
-                                 .dt.strftime("%Y-%m-%d")
+    df_pr = pd.DataFrame(recent_payments, columns=[
+        "id", "contract_id", "requested_by_id", "requested_by", "requested_date",
+        "paid_date", "amount_usd", "amount_iqd", "note", "status",
+        "comments", "created_at", "updated_at", "contract_id_join",
+        "contract_title", "project_id_join", "project_name",
+        "contractor_id_join", "contractor_name"
+    ])
+    # Format dates
+    df_pr["requested_date"] = pd.to_datetime(df_pr["requested_date"]).dt.strftime("%Y-%m-%d")
+    df_pr["paid_date"] = pd.to_datetime(df_pr["paid_date"]).dt.strftime("%Y-%m-%d")
+    df_pr["created_at"] = pd.to_datetime(df_pr["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
+    df_pr["updated_at"] = pd.to_datetime(df_pr["updated_at"]).dt.strftime("%Y-%m-%d %H:%M")
     df_pr = df_pr.rename(columns={
-        "id":             "Request ID",
-        "requested_date": "Date",
-        "requester":      "Requested By",
-        "project":        "Project",
-        "contract":       "Contract",
-        "amount_usd":     "Amount (USD)",
-        "amount_iqd":     "Amount (IQD)",
-        "status":         "Status",
-        "comments":       "Comments"
+        "id": "Request ID",
+        "contract_id": "Contract ID",
+        "requested_by_id": "Requested By ID",
+        "requested_by": "Requested By",
+        "requested_date": "Requested Date",
+        "paid_date": "Paid Date",
+        "amount_usd": "Amount (USD)",
+        "amount_iqd": "Amount (IQD)",
+        "note": "Note",
+        "status": "Status",
+        "comments": "Comments",
+        "created_at": "Created At",
+        "updated_at": "Updated At",
+        "contract_id_join": "Contract (ID)",
+        "contract_title": "Contract Title",
+        "project_id_join": "Project (ID)",
+        "project_name": "Project Name",
+        "contractor_id_join": "Contractor (ID)",
+        "contractor_name": "Contractor Name"
     })
     st.dataframe(df_pr, use_container_width=True)
 else:
@@ -152,9 +181,8 @@ else:
 st.markdown("---")
 st.subheader("🕒 Recent Activity")
 if activity_log:
-    df_act = pd.DataFrame(activity_log)
-    df_act["timestamp"] = pd.to_datetime(df_act["timestamp"]) \
-                               .dt.strftime("%Y-%m-%d %H:%M:%S")
+    df_act = pd.DataFrame(activity_log, columns=["timestamp", "username", "action_type", "details"])
+    df_act["timestamp"] = pd.to_datetime(df_act["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
     df_act = df_act.rename(columns={
         "timestamp":   "When",
         "username":    "User",
