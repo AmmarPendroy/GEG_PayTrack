@@ -17,7 +17,11 @@ if not cookies.ready():
 # Restore session from cookie if available
 saved = cookies.get("user_session")
 if saved:
-    st.session_state.user = saved
+    try:
+        st.session_state.user = json.loads(saved)
+    except json.JSONDecodeError:
+        cookies["user_session"] = None  # clear invalid data
+        cookies.save()
 
 # ─── PASSWORD HASH ─────────────────────────────────────────────────────────────
 def hash_password(pw: str) -> str:
