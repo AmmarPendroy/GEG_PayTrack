@@ -20,7 +20,7 @@ if not user:
     st.stop()
 
 # ─── 4) Live data loader ────────────────────────────────────────
-def load_summary_data():
+def load_summary_data(limit_requests: int = 10):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -52,33 +52,36 @@ def load_summary_data():
     activity_rows = cur.fetchall()
 
     # Recent payment requests
-    cur.execute("""
+    cur.execute(f"""
         SELECT
+            pr.id,
             pr.requested_date,
             u.username        AS requester,
-            c.title           AS contract,
             p.name            AS project,
+            c.title           AS contract,
             pr.amount_usd,
-            pr.status
+            pr.amount_iqd,
+            pr.status,
+            pr.comments
         FROM payment_requests pr
         LEFT JOIN users u       ON pr.requested_by = u.id
         LEFT JOIN contracts c   ON pr.contract_id = c.id
         LEFT JOIN projects p    ON c.project_id = p.id
         ORDER BY pr.requested_date DESC
-        LIMIT 10
-    """)
+        LIMIT %s
+    """, (limit_requests,))
     recent_pr_rows = cur.fetchall()
 
     conn.close()
     return project_count, status_counts, activity_rows, recent_pr_rows
 
+# Load data
 project_count, status_counts, activity_log, recent_payments = load_summary_data()
 
 # ─── 5) UI Layout ───────────────────────────────────────────────
 st.title("📊 Dashboard")
 st.markdown(f"Welcome back, **{user['username']}**!")
 
-# Refresh
 if st.button("🔄 Refresh"):
     st.experimental_rerun()
 
@@ -93,17 +96,14 @@ col4.metric("❌ Rejected",  status_counts.get("rejected",  0))
 st.markdown("---")
 st.subheader("📈 Payment Requests by Status")
 
-# Status filter control
 all_statuses = list(status_counts.keys())
 selected_statuses = st.multiselect(
     "Filter statuses", all_statuses, default=all_statuses
 )
 
-# Build DataFrame and apply filter
 df_status = pd.DataFrame([
     {"Status": s.capitalize(), "Count": c}
-    for s, c in status_counts.items()
-    if s in selected_statuses
+    for s, c in status_counts.items() if s in selected_statuses
 ])
 
 if not df_status.empty:
@@ -120,17 +120,13 @@ if not df_status.empty:
             ),
             tooltip=["Status:N", "Count:Q"]
         )
-        .properties(
-            width="container",
-            height=350,
-            title="Payment Requests by Status"
-        )
+        .properties(width="container", height=350)
     )
     st.altair_chart(chart, use_container_width=True)
 else:
     st.info("No data for the selected statuses.")
 
-# — Recent Payment Requests list
+# — Recent Payment Requests list (expanded columns) ───────────────
 st.markdown("---")
 st.subheader("💸 Recent Payment Requests")
 if recent_payments:
@@ -138,18 +134,21 @@ if recent_payments:
     df_pr["requested_date"] = pd.to_datetime(df_pr["requested_date"]) \
                                  .dt.strftime("%Y-%m-%d")
     df_pr = df_pr.rename(columns={
+        "id":             "Request ID",
         "requested_date": "Date",
         "requester":      "Requested By",
-        "contract":       "Contract",
         "project":        "Project",
+        "contract":       "Contract",
         "amount_usd":     "Amount (USD)",
-        "status":         "Status"
+        "amount_iqd":     "Amount (IQD)",
+        "status":         "Status",
+        "comments":       "Comments"
     })
     st.dataframe(df_pr, use_container_width=True)
 else:
     st.info("No recent payment requests found.")
 
-# — Recent Activity log
+# — Recent Activity log ───────────────────────────────────────────
 st.markdown("---")
 st.subheader("🕒 Recent Activity")
 if activity_log:
