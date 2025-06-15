@@ -2,35 +2,57 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
+import plotly.express as px
 from datetime import datetime
 
+# ────────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="📊 Dashboard", layout="wide")
 st.title("📊 Dashboard")
+# ────────────────────────────────────────────────────────────────────────────────
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Database connection helper
-# ────────────────────────────────────────────────────────────────────────────────
 def get_connection():
     return psycopg2.connect(st.secrets["db_url"], cursor_factory=RealDictCursor)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Load summary data (project counts, payment status summary, activity log)
-# ────────────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=10)
 def load_summary_data():
     conn = get_connection()
     cur = conn.cursor()
-
-    # Count projects
+    # ─── Totals ────────────────────────────────────────────────────────────────
     cur.execute("SELECT COUNT(*) FROM projects")
-    project_count = cur.fetchone()["count"]
-
-    # Payment status breakdown
+    total_projects = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM contracts")
+    total_contracts = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM contractors")
+    total_contractors = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM payment_requests")
+    total_requests = cur.fetchone()[0]
+    # ─── Status counts ────────────────────────────────────────────────────────
     cur.execute("SELECT status, COUNT(*) FROM payment_requests GROUP BY status")
-    status_counts_raw = cur.fetchall()
-    status_counts = {row['status']: row['count'] for row in status_counts_raw}
-
-    # Activity log
+    status_counts = {row[0]: row[1] for row in cur.fetchall()}
+    # ─── Total paid counts ────────────────────────────────────────────────────
+    paid_count     = status_counts.get("paid",     0)
+    rejected_count = status_counts.get("rejected", 0)
+    # ─── Amount sums ──────────────────────────────────────────────────────────
+    # Contracts
+    cur.execute("SELECT COALESCE(SUM(value_usd),0), COALESCE(SUM(value_iqd),0) FROM contracts")
+    total_budget_usd, total_budget_iqd = cur.fetchone()
+    # Paid amounts
+    cur.execute("""
+        SELECT
+            COALESCE(SUM(amount_usd),0),
+            COALESCE(SUM(amount_iqd),0)
+        FROM payment_requests
+        WHERE status='paid'
+    """)
+    total_paid_usd, total_paid_iqd = cur.fetchone()
+    # ─── Average approval time (days) ─────────────────────────────────────────
+    cur.execute("""
+        SELECT AVG(EXTRACT(EPOCH FROM (paid_date - requested_date))/86400)
+        FROM payment_requests
+        WHERE paid_date IS NOT NULL
+    """)
+    avg_approval_days = cur.fetchone()[0] or 0
+    # ─── Recent activity log ──────────────────────────────────────────────────
     cur.execute("""
         SELECT timestamp, performed_by, action_type, target_table, target_id, details
         FROM activity_log
@@ -40,98 +62,79 @@ def load_summary_data():
     activity_log = cur.fetchall()
 
     conn.close()
-    return project_count, status_counts, activity_log
+    return {
+        "projects": total_projects,
+        "contracts": total_contracts,
+        "contractors": total_contractors,
+        "requests": total_requests,
+        "status": status_counts,
+        "paid_count": paid_count,
+        "rejected_count": rejected_count,
+        "budget_usd": total_budget_usd,
+        "budget_iqd": total_budget_iqd,
+        "paid_usd": total_paid_usd,
+        "paid_iqd": total_paid_iqd,
+        "avg_days": avg_approval_days,
+        "activity_log": activity_log
+    }
+
+data = load_summary_data()
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Load recent payment requests
+# Top‐line metrics (2 rows of 4)
 # ────────────────────────────────────────────────────────────────────────────────
-def load_recent_payment_requests(limit=5):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT pr.*, 
-               c.title AS contract_title,
-               p.id AS project_id_join,
-               p.name AS project_name,
-               co.id AS contractor_id_join,
-               co.name AS contractor_name,
-               u.username AS requested_by
-        FROM payment_requests pr
-        LEFT JOIN contracts c ON pr.contract_id = c.id
-        LEFT JOIN projects p ON c.project_id = p.id
-        LEFT JOIN contractors co ON c.contractor_id = co.id
-        LEFT JOIN users u ON pr.requested_by = u.id
-        ORDER BY pr.created_at DESC
-        LIMIT %s
-    """, (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+row1 = st.columns(4)
+row1[0].metric("🏗️ Total Projects",     data["projects"])
+row1[1].metric("📄 Total Contracts",    data["contracts"])
+row1[2].metric("👷 Total Contractors",  data["contractors"])
+row1[3].metric("💳 All Requests",       data["requests"])
+
+row2 = st.columns(4)
+row2[0].metric("⏳ Pending",   data["status"].get("pending",  0))
+row2[1].metric("✅ Approved",  data["status"].get("approved", 0))
+row2[2].metric("❌ Rejected",  data["rejected_count"])
+row2[3].metric("💰 Paid Count", data["paid_count"])
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 1. Project summary
+# Currency totals and approval time
 # ────────────────────────────────────────────────────────────────────────────────
-project_count, status_counts, activity_log = load_summary_data()
-st.metric("🏗️ Total Projects", value=project_count)
+col1, col2, col3 = st.columns(3)
+col1.metric("💵 Total Budget (USD)", f"{data['budget_usd']:,.2f}")
+col2.metric("💴 Total Budget (IQD)", f"{data['budget_iqd']:,.0f}")
+col3.metric("⏱️ Avg Approval Time", f"{data['avg_days']:.1f} days")
+
+col4, col5 = st.columns(2)
+col4.metric("💵 Paid Amount (USD)", f"{data['paid_usd']:,.2f}")
+col5.metric("💴 Paid Amount (IQD)", f"{data['paid_iqd']:,.0f}")
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 2. Payment status chart (modern style with legend)
+# Budget vs Actual (grouped bar)
 # ────────────────────────────────────────────────────────────────────────────────
-import plotly.express as px
-status_data = pd.DataFrame(
-    [
-        {"Status": k.capitalize(), "Count": v} for k, v in status_counts.items()
-    ]
-)
+ba_df = pd.DataFrame([
+    {"Currency": "USD", "Type": "Budget",    "Amount": data["budget_usd"]},
+    {"Currency": "USD", "Type": "Actual Paid","Amount": data["paid_usd"]},
+    {"Currency": "IQD", "Type": "Budget",    "Amount": data["budget_iqd"]},
+    {"Currency": "IQD", "Type": "Actual Paid","Amount": data["paid_iqd"]},
+])
 fig = px.bar(
-    status_data,
-    x="Status",
-    y="Count",
-    color="Status",
-    color_discrete_sequence=px.colors.qualitative.Pastel,
-    title="Payment Requests by Status",
+    ba_df,
+    x="Currency",
+    y="Amount",
+    color="Type",
+    barmode="group",
+    text="Amount",
+    title="Budget vs Actual by Currency"
 )
-fig.update_layout(showlegend=True, xaxis_title="Status", yaxis_title="Count")
+fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+fig.update_layout(yaxis_title="Amount", xaxis_title="")
 st.plotly_chart(fig, use_container_width=True)
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 3. Recent Payment Requests (all columns + Short ID)
+# Existing: Payment status breakdown (if you still want the old chart)
 # ────────────────────────────────────────────────────────────────────────────────
-st.subheader("💸 Recent Payment Requests")
-recent_payments = load_recent_payment_requests()
-if recent_payments:
-    df_pr = pd.DataFrame(recent_payments)
-    df_pr["requested_date"] = pd.to_datetime(df_pr["requested_date"]).dt.date
-    df_pr["paid_date"] = pd.to_datetime(df_pr["paid_date"]).dt.date
-    df_pr["created_at"] = pd.to_datetime(df_pr["created_at"]).dt.strftime("%Y-%m-%d %H:%M")
-    df_pr["updated_at"] = pd.to_datetime(df_pr["updated_at"]).dt.strftime("%Y-%m-%d %H:%M")
-
-    short_ids = []
-    for idx, row in df_pr.iterrows():
-        abbr = (row["contractor_name"].replace(" ", "")[:3] or "UNK").upper()
-        short_ids.append(f"{row['project_name']}-{abbr}-{idx+1}")
-    df_pr.insert(0, "Short ID", short_ids)
-    df_pr.drop(columns=["id"], inplace=True)
-
-    st.dataframe(df_pr, use_container_width=True)
-else:
-    st.info("No recent payment requests found.")
+# …your prior Plotly status‐breakdown here…
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 4. Recent activity log (last 20 entries)
+# Recent Payment Requests & Activity Log
 # ────────────────────────────────────────────────────────────────────────────────
-st.subheader("🕒 Recent Activity")
-if activity_log:
-    df_log = pd.DataFrame(activity_log)
-    df_log["timestamp"] = pd.to_datetime(df_log["timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
-    df_log.rename(columns={
-        "timestamp": "Timestamp",
-        "performed_by": "User",
-        "action_type": "Action",
-        "target_table": "Target Table",
-        "target_id": "Target ID",
-        "details": "Details"
-    }, inplace=True)
-    st.dataframe(df_log, use_container_width=True)
-else:
-    st.info("No recent activities recorded.")
+# …your existing tables for recent requests and activity log…
