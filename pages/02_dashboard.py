@@ -71,7 +71,7 @@ st.markdown(f"Welcome back, **{user['username']}**!")
 
 # Refresh button
 if st.button("🔄 Refresh"):
-    st.experimental_rerun()
+    st.rerun()
 
 # ─── 5a) Summary metrics ────────────────────────────────────────
 col1, col2, col3, col4 = st.columns(4)
